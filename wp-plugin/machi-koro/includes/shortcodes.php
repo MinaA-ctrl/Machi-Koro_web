@@ -56,6 +56,7 @@ add_shortcode('mk_home', function () {
             <?php if (!is_user_logged_in()): ?>
             <input id="mk-guest-name" type="text" placeholder="Your name" maxlength="64" />
             <?php endif; ?>
+            <input id="mk-table-password" type="password" placeholder="Password (optional)" maxlength="64" autocomplete="new-password" />
             <div class="mk-create-btns">
                 <button id="mk-btn-create-public"  class="mk-btn mk-btn-primary">Create Public</button>
                 <button id="mk-btn-create-private" class="mk-btn mk-btn-secondary">Create Private</button>
@@ -70,7 +71,10 @@ add_shortcode('mk_home', function () {
 add_shortcode('mk_waiting_room', function () {
     ob_start(); ?>
     <div id="mk-waiting-room" class="mk-page">
+        <h1 class="mk-lobby-title">🪑 Table Lobby</h1>
+        <p class="mk-lobby-sub">Share the code below to invite friends</p>
         <div class="mk-code-display">
+            <span class="mk-code-label">Join code</span>
             <span id="mk-table-code"></span>
             <button id="mk-btn-copy-code" class="mk-btn-small">Copy</button>
         </div>
@@ -145,7 +149,7 @@ add_shortcode('mk_rules', function () {
 
         <section class="mk-rules-section">
             <h2>🏪 Establishments</h2>
-            <p style="color:#aaa;margin-bottom:4px;">Cards resolve in this order each roll:</p>
+            <p style="margin-bottom:8px;">Cards resolve in this order each roll:</p>
             <div class="mk-rules-order-bar">
                 <span class="mk-ro-red">① Red</span>
                 <span class="mk-ro-arrow">→</span>
@@ -323,7 +327,7 @@ add_shortcode('mk_game', function () {
 
       <!-- ── Right Drawer (player zone) ── -->
       <aside class="drawer" id="mk-drawer">
-        <button class="drawer-toggle" id="mk-drawer-toggle">‹</button>
+        <button class="drawer-toggle" id="mk-drawer-toggle" aria-label="Collapse my zone">›</button>
 
         <!-- Collapsed strip -->
         <div class="drawer-collapsed-view">

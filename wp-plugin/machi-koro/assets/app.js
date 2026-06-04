@@ -44,7 +44,7 @@ if (document.getElementById('mk-home')) {
         $('mk-table-list').innerHTML = tables.map(t => `
             <div class="mk-table-row">
                 <div>
-                    <div class="mk-table-info">${esc(t.name)} ${t.has_password ? '🔒' : ''}</div>
+                    <div class="mk-table-info">${esc(t.name)} ${t.is_protected ? '🔒' : ''}</div>
                     <div class="mk-table-meta">${t.player_count}/5 players</div>
                 </div>
                 <button class="mk-btn mk-btn-primary" onclick="joinByCode('${esc(t.code)}')">Join</button>
@@ -60,16 +60,81 @@ if (document.getElementById('mk-home')) {
         const table = await api.get('/tables/' + code);
         if (!table.code) { showJoinError('Table not found.'); return; }
         if (table.status !== 'waiting') { showJoinError('This game has already started.'); return; }
-        const guestName = $('mk-guest-name')?.value || 'Guest';
-        const res = await api.post('/tables/' + code + '/join', { guest_name: guestName });
-        if (res.seat !== undefined) {
-            sessionStorage.setItem('mk_code', code);
-            sessionStorage.setItem('mk_seat', res.seat);
-            window.location.href = '/waiting-room/?code=' + code;
-        } else {
-            showJoinError(res.message || 'Could not join table.');
+        // Protected tables need a password before we can join — ask first.
+        if (table.is_protected) {
+            openPasswordPrompt(code);
+            return;
         }
+        const res = await doJoin(code);
+        if (res.seat !== undefined) goWaiting(code, res.seat);
+        else showJoinError(res.message || 'Could not join table.');
     };
+
+    // Send a join request; `password` is included only for protected tables.
+    function doJoin(code, password) {
+        const guestName = $('mk-guest-name')?.value || 'Guest';
+        const body = { guest_name: guestName };
+        if (password != null) body.password = password;
+        return api.post('/tables/' + code + '/join', body);
+    }
+
+    // Store seat + redirect into the waiting room. Shared by create and join.
+    function goWaiting(code, seat) {
+        sessionStorage.setItem('mk_code', code);
+        sessionStorage.setItem('mk_seat', seat);
+        window.location.href = '/waiting-room/?code=' + code;
+    }
+
+    // Modal that asks for a table password and joins on submit.
+    // Wrong password (403) keeps the modal open with an inline, retryable error.
+    function openPasswordPrompt(code) {
+        document.getElementById('mk-pw-overlay')?.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'mk-pw-overlay';
+        overlay.className = 'mk-modal-overlay';
+        overlay.innerHTML = `
+            <div class="mk-modal">
+                <h3 class="mk-modal-title">🔒 Password required</h3>
+                <p class="mk-modal-text">This table is protected. Enter the password to join.</p>
+                <input id="mk-pw-input" type="password" placeholder="Password" maxlength="64" autocomplete="off" />
+                <p id="mk-pw-error" class="mk-error-msg mk-hidden"></p>
+                <div class="mk-modal-btns">
+                    <button id="mk-pw-submit" class="mk-btn mk-btn-primary">Join</button>
+                    <button id="mk-pw-cancel" class="mk-btn mk-btn-secondary">Cancel</button>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+
+        const input  = $('mk-pw-input');
+        const errEl  = $('mk-pw-error');
+        const submit = $('mk-pw-submit');
+        const close  = () => overlay.remove();
+        const showErr = (msg) => { errEl.textContent = msg; errEl.classList.remove('mk-hidden'); };
+
+        input.focus();
+
+        const trySubmit = async () => {
+            const password = input.value;
+            if (!password) { showErr('Please enter the password.'); return; }
+            submit.disabled = true;
+            const res = await doJoin(code, password);
+            if (res.seat !== undefined) { goWaiting(code, res.seat); return; }
+            // Re-enable so the user can retry without reopening the modal.
+            submit.disabled = false;
+            if (res.data?.status === 403) {
+                showErr('Wrong password. Try again.');
+                input.select();
+            } else {
+                showErr(res.message || 'Could not join table.');
+            }
+        };
+
+        submit.addEventListener('click', trySubmit);
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') trySubmit(); });
+        $('mk-pw-cancel').addEventListener('click', close);
+        overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    }
 
     function showJoinError(msg) {
         const el = document.createElement('p');
@@ -81,16 +146,17 @@ if (document.getElementById('mk-home')) {
     }
 
     async function createTable(isPublic) {
+        const password = $('mk-table-password')?.value.trim() || '';
         const body = {
             name:       $('mk-table-name').value || 'Machi Koro Table',
             is_public:  isPublic,
             guest_name: $('mk-guest-name')?.value || 'Guest',
         };
+        // Only send a password when the host actually set one — protects the table.
+        if (password) body.password = password;
         const res = await api.post('/tables', body);
         if (res.code) {
-            sessionStorage.setItem('mk_code', res.code);
-            sessionStorage.setItem('mk_seat', 0);
-            window.location.href = '/waiting-room/?code=' + res.code;
+            goWaiting(res.code, 0);
         } else {
             alert(res.message || 'Could not create table.');
         }
@@ -626,7 +692,11 @@ if (document.getElementById('mk-game')) {
                 ? estEntries.map(([id, count]) => {
                     const card = state.card_defs[id];
                     const cc   = colorClass(card.type);
-                    return `<div class="owned-card ${cc}">
+                    // 0.5.5: show the card's effect on hover via native title (escape() leaves
+                    // quotes intact, so also encode " for the attribute context). Native title
+                    // can't be clipped by the 0.5.4 overflow:auto container and degrades on touch.
+                    const effectTitle = esc(card.effect ?? '').replace(/"/g, '&quot;');
+                    return `<div class="owned-card ${cc}" title="${effectTitle}">
                         <span class="owned-sym">${SYMBOLS[card.symbol] ?? '🏢'}</span>
                         <span class="owned-name">${esc(card.name)}</span>
                         <span class="owned-count">×${count}</span>
