@@ -25,6 +25,8 @@ services:
       WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
       WORDPRESS_DB_USER: ${MYSQL_USER}
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
+      # Shared HMAC secret for signing game WebSocket tokens (must match websocket service)
+      MK_WS_SECRET: ${MK_WS_SECRET}
     volumes:
       - wp_data:/var/www/html
       - ./wp-plugin/machi-koro:/var/www/html/wp-content/plugins/machi-koro
@@ -40,6 +42,8 @@ services:
       DB_NAME: ${MYSQL_DATABASE}
       DB_USER: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
+      # Must be identical to the wordpress service's MK_WS_SECRET
+      MK_WS_SECRET: ${MK_WS_SECRET}
     depends_on:
       - db
     networks:

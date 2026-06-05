@@ -1,0 +1,102 @@
+name: php-ci
+
+# TASK-108 / CI-1 — verify the WordPress plugin's PHP and its schema bootstrap
+# on every push. Closes the DEPLOY-001 near-miss gap (retro action #2): syntax
+# errors and broken migrations were previously only caught in a manual staging
+# sweep. Two gates:
+#   * php-lint  — `php -l` across every plugin PHP file.
+#   * migration — boot a real WordPress against a MySQL service, activate the
+#                 plugin (runs mk_install), and prove game_version exists both on
+#                 a fresh install AND after the explicit migration on a table
+#                 that predates the column (the dbDelta blind spot, retro #4).
+
+on:
+  push:
+    paths:
+      - "wp-plugin/**"
+      - ".github/workflows/php-ci.yml"
+  pull_request:
+    paths:
+      - "wp-plugin/**"
+      - ".github/workflows/php-ci.yml"
+
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+
+      - name: php -l across all plugin PHP files
+        # -n1 so the failing file is named; xargs exits non-zero if any -l fails.
+        run: find wp-plugin -name '*.php' -print0 | xargs -0 -n1 -P4 php -l
+
+  migration:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: wordpress
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+          extensions: mysqli
+          tools: wp-cli
+
+      - name: Wait for MySQL
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -proot --silent; then exit 0; fi
+            sleep 2
+          done
+          echo "MySQL did not become ready"; exit 1
+
+      - name: Install WordPress
+        run: |
+          wp core download --path=wp --version=latest
+          wp config create --path=wp --dbname=wordpress --dbuser=root \
+            --dbpass=root --dbhost=127.0.0.1:3306
+          wp core install --path=wp --url=http://localhost --title=CI \
+            --admin_user=admin --admin_password=admin \
+            --admin_email=ci@example.com --skip-email
+
+      - name: Install plugin
+        run: |
+          mkdir -p wp/wp-content/plugins/machi-koro
+          cp -r wp-plugin/machi-koro/* wp/wp-content/plugins/machi-koro/
+
+      - name: Activate plugin (runs mk_install bootstrap)
+        run: wp plugin activate machi-koro --path=wp
+
+      - name: Fresh install has game_version
+        run: |
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'game_version'" --path=wp \
+            | grep -q game_version
+          echo "fresh install: game_version present"
+
+      - name: Migration restores game_version on a pre-B4 table
+        # Simulate a live install created before B4: drop the column and clear the
+        # schema-version flag, then run the migration explicitly. This is the case
+        # dbDelta silently skips (retro #4) — mk_migrate's guarded ALTER must add it.
+        run: |
+          wp db query "ALTER TABLE wp_mk_tables DROP COLUMN game_version" --path=wp
+          wp option delete mk_db_version --path=wp
+          wp eval 'mk_migrate();' --path=wp
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'game_version'" --path=wp \
+            | grep -q game_version
+          echo "migration: game_version restored on existing table"

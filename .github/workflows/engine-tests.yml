@@ -1,0 +1,33 @@
+name: engine-tests
+
+# TASK-005 — run the engine characterization suite on every push / PR.
+# The engine has no runtime deps (only stdlib + card_defs), so pytest alone is enough.
+
+on:
+  push:
+    paths:
+      - "websocket-server/**"
+      - ".github/workflows/engine-tests.yml"
+  pull_request:
+    paths:
+      - "websocket-server/**"
+      - ".github/workflows/engine-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: websocket-server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test deps
+        run: pip install -r requirements-dev.txt
+
+      - name: Run engine characterization suite
+        run: pytest

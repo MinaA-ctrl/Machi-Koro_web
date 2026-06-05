@@ -1,0 +1,3 @@
+# Test-only deps for the engine characterization suite (TASK-005).
+# The engine imports nothing from the runtime stack, so pytest alone suffices.
+pytest==8.4.2

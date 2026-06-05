@@ -66,7 +66,7 @@ if (document.getElementById('mk-home')) {
             return;
         }
         const res = await doJoin(code);
-        if (res.seat !== undefined) goWaiting(code, res.seat);
+        if (res.seat !== undefined) goWaiting(code, res.seat, res.token);
         else showJoinError(res.message || 'Could not join table.');
     };
 
@@ -78,10 +78,14 @@ if (document.getElementById('mk-home')) {
         return api.post('/tables/' + code + '/join', body);
     }
 
-    // Store seat + redirect into the waiting room. Shared by create and join.
-    function goWaiting(code, seat) {
+    // Store seat + per-seat game token, then redirect into the waiting room.
+    // Shared by create and join. The token (issued by api.php on create/join) is
+    // required by the /game/ WebSocket — persist it so the game page can present
+    // it when it connects (WEB-002).
+    function goWaiting(code, seat, token) {
         sessionStorage.setItem('mk_code', code);
         sessionStorage.setItem('mk_seat', seat);
+        if (token) sessionStorage.setItem('mk_token', token);
         window.location.href = '/waiting-room/?code=' + code;
     }
 
@@ -119,7 +123,7 @@ if (document.getElementById('mk-home')) {
             if (!password) { showErr('Please enter the password.'); return; }
             submit.disabled = true;
             const res = await doJoin(code, password);
-            if (res.seat !== undefined) { goWaiting(code, res.seat); return; }
+            if (res.seat !== undefined) { goWaiting(code, res.seat, res.token); return; }
             // Re-enable so the user can retry without reopening the modal.
             submit.disabled = false;
             if (res.data?.status === 403) {
@@ -145,18 +149,32 @@ if (document.getElementById('mk-home')) {
         setTimeout(() => el.remove(), 3500);
     }
 
+    // Version selector (B4): a two-option segmented control. Defaults to Harbour
+    // (the .is-active option in the markup), matching current behavior.
+    const versionOpts = document.querySelectorAll('#mk-version-select .mk-version-opt');
+    versionOpts.forEach(btn => btn.addEventListener('click', () => {
+        versionOpts.forEach(b => {
+            const on = b === btn;
+            b.classList.toggle('is-active', on);
+            b.setAttribute('aria-checked', on ? 'true' : 'false');
+        });
+    }));
+    const selectedVersion = () =>
+        document.querySelector('#mk-version-select .mk-version-opt.is-active')?.dataset.version || 'harbour';
+
     async function createTable(isPublic) {
         const password = $('mk-table-password')?.value.trim() || '';
         const body = {
             name:       $('mk-table-name').value || 'Machi Koro Table',
             is_public:  isPublic,
             guest_name: $('mk-guest-name')?.value || 'Guest',
+            version:    selectedVersion(),
         };
         // Only send a password when the host actually set one — protects the table.
         if (password) body.password = password;
         const res = await api.post('/tables', body);
         if (res.code) {
-            goWaiting(res.code, 0);
+            goWaiting(res.code, 0, res.token);
         } else {
             alert(res.message || 'Could not create table.');
         }
@@ -178,6 +196,9 @@ if (document.getElementById('mk-waiting-room')) {
 
     async function init() {
         const table = await api.get('/tables/' + code);
+        const v = mkVersionInfo(table.game_version);
+        const vEl = $('mk-table-version');
+        if (vEl) vEl.textContent = `${v.icon} ${v.full}`;
         renderPlayers(table.players);
         if (sessionStorage.getItem('mk_seat') === '0') {
             $('mk-btn-start').classList.remove('mk-hidden');
@@ -318,6 +339,9 @@ if (document.getElementById('mk-waiting-room')) {
     $('mk-btn-start').addEventListener('click', async () => {
         const res = await api.post('/tables/' + code + '/start', {});
         if (res.started) {
+            // The host's game token is minted by /start (seat 0), not by create —
+            // store it so the host's /game/ socket can authenticate (WEB-002).
+            if (res.token) sessionStorage.setItem('mk_token', res.token);
             ws.send(JSON.stringify({ event: 'game_started' }));
             window.location.href = '/game/?code=' + code;
         } else {
@@ -368,7 +392,11 @@ if (document.getElementById('mk-game')) {
 
     // ── WebSocket ─────────────────────────────────────
     function connectWS() {
-        ws = new WebSocket(MK.wsUrl + code + '/game/' + mySeat);
+        // The /game/ socket requires the per-seat token issued at create/join
+        // (WEB-002). Without it the server closes the connection with 4401 and
+        // no game state ever arrives (blank board, "can't connect").
+        const token = sessionStorage.getItem('mk_token') || '';
+        ws = new WebSocket(MK.wsUrl + code + '/game/' + mySeat + '?token=' + encodeURIComponent(token));
         ws.onmessage = (e) => {
             const msg = JSON.parse(e.data);
 
@@ -631,6 +659,11 @@ if (document.getElementById('mk-game')) {
         setEl('mk-avatar-initials', me.name.charAt(0).toUpperCase());
         setEl('mk-my-name', me.name);
         setEl('mk-coin-count', me.coins);
+
+        // Game version label — topbar badge + drawer subtitle (B4: state.version)
+        const v = mkVersionInfo(state.version);
+        setEl('mk-game-version', `${v.icon} ${v.short}`);
+        setEl('mk-my-version', v.full);
 
         // Roll / skip buttons
         const rollBtn = document.getElementById('mk-btn-roll');
@@ -965,6 +998,17 @@ if (document.getElementById('mk-game')) {
     }
 
     connectWS();
+}
+
+// ── Version labels (B4 contract) ──────────────────────────────────────────────
+// Accepts either the DB key ('basic'/'harbour' from GET /tables) or the engine's
+// config name ('Basic'/'Harbour' from the game state.version) — both normalize to
+// the same label. Unknown/missing → Harbour, matching the backend's defensive
+// version→config default.
+function mkVersionInfo(v) {
+    const key = String(v ?? '').trim().toLowerCase();
+    if (key === 'basic') return { key: 'basic', short: 'Basic', full: 'Base Game', icon: '🏙️' };
+    return { key: 'harbour', short: 'Harbour', full: 'Harbor Expansion', icon: '⚓' };
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

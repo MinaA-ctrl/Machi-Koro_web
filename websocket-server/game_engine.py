@@ -4,38 +4,64 @@ from card_defs import (
     CARD_DEFS, LANDMARK_DEFS,
     WHEAT_SYMBOL_CARDS, CUP_SYMBOL_CARDS, BREAD_SYMBOL_CARDS, GEAR_SYMBOL_CARDS,
 )
+from game_config import HARBOUR_GAME
+
+_LANDMARK_BY_ID = {lm['id']: lm for lm in LANDMARK_DEFS}
+
+
+# ── Dice RNG seam ────────────────────────────────────────────────────────────
+# All dice go through this module-level Random so tests can make rolls
+# deterministic via seed(). Production leaves it unseeded (system entropy).
+_rng = random.Random()
+
+
+def seed(n):
+    """Seed the dice RNG for deterministic rolls (used by tests)."""
+    _rng.seed(n)
+
+
+def roll_die():
+    """Roll a single six-sided die through the seedable RNG."""
+    return _rng.randint(1, 6)
 
 
 # ── State creation ─────────────────────────────────────────────────────────────
 
-def create_initial_state(players_info):
+def create_initial_state(players_info, config=HARBOUR_GAME):
+    """Build a fresh game state for the given version `config`.
+
+    Defaults to HARBOUR_GAME so existing callers and the characterization
+    harness are unchanged. Everything version-specific (which cards/landmarks
+    exist, the starting hand, starting coins) comes from `config`.
+    """
     num_players = len(players_info)
     players = []
     for p in players_info:
         players.append({
             'seat':      p['seat'],
             'name':      p['display_name'],
-            'coins':     3,
-            'cards':     {'wheat_field': 1, 'bakery': 1},
+            'user_id':   p.get('user_id'),   # None for guests; used to attribute scores
+            'coins':     config.starting_coins,
+            'cards':     dict(config.starting_cards),
             'landmarks': [
                 {'id': lm['id'], 'name': lm['name'], 'cost': lm['cost'],
                  'built': lm['pre_built'], 'effect': lm['effect']}
-                for lm in LANDMARK_DEFS
+                for lm in (_LANDMARK_BY_ID[lid] for lid in config.landmark_ids)
             ],
         })
 
-    # Supply: 6 per regular card, num_players per purple card
+    # Supply: 6 per regular card, num_players per purple card — only the cards
+    # this version includes.
     supply = {}
-    for card_id, card in CARD_DEFS.items():
-        if card['type'] == 'Purple Major':
-            supply[card_id] = num_players
-        else:
-            supply[card_id] = 6
+    for card_id in config.establishment_ids:
+        card = CARD_DEFS[card_id]
+        supply[card_id] = num_players if card['type'] == 'Purple Major' else 6
 
     start_seat = min(p['seat'] for p in players)
 
     return {
         'phase':          'roll',
+        'version':        config.name,
         'active_seat':    start_seat,
         'last_roll':      None,
         'last_dice':      [],
@@ -44,10 +70,11 @@ def create_initial_state(players_info):
         'ap_used':        False,
         'pending_prompt': None,
         'players':        players,
-        'market':         list(CARD_DEFS.values()),
+        'market':         [CARD_DEFS[cid] for cid in config.establishment_ids],
         'supply':         supply,
         'card_defs':      CARD_DEFS,
         'winner':         None,
+        'game_seq':       0,
         'log':            [],
     }
 
@@ -242,8 +269,10 @@ def resolve_cards(state, roll):
                         lose(opp, taken, 'Tax Office')
                         transfers.append(f"{opp['name']} pays {taken}🪙 to {active['name']} (Tax Office)")
 
-    # ── 5. City Hall — active player at 0 coins gets 1 ────────────────────────
-    if active['coins'] == 0:
+    # ── 5. City Hall — active player at 0 coins gets 1 (only if they own it) ──
+    # Harbour pre-builds City Hall for everyone, so this fires as before there;
+    # the Base game has no City Hall, so the safety net correctly does not apply.
+    if active['coins'] == 0 and has_landmark(active, 'city_hall'):
         give_coins(active, 1)
         add_log(state, f"{active['name']} gets 1🪙 (City Hall)")
         gain(active, 1, 'City Hall')
@@ -284,7 +313,9 @@ def calculate_scores(state):
     for p in state['players']:
         built = sum(1 for lm in p['landmarks'] if lm['built'] and lm['id'] != 'city_hall')
         rows.append({'seat': p['seat'], 'name': p['name'],
-                     'landmarks_built': built, 'is_winner': p['seat'] == state.get('winner')})
+                     'user_id': p.get('user_id'),
+                     'landmarks_built': built, 'coins_at_end': p['coins'],
+                     'is_winner': p['seat'] == state.get('winner')})
     rows.sort(key=lambda r: -r['landmarks_built'])
     return rows
 
@@ -305,7 +336,7 @@ def handle_action(state, seat, msg):
     # ── Roll ───────────────────────────────────────────────────────────────────
     if event == 'roll' and seat == active_seat and state['phase'] == 'roll':
         dice_count = 2 if (msg.get('dice_count', 1) == 2 and has_landmark(active, 'train_station')) else 1
-        dice = [random.randint(1, 6) for _ in range(dice_count)]
+        dice = [roll_die() for _ in range(dice_count)]
         total = sum(dice)
         doubles = (len(dice) == 2 and dice[0] == dice[1])
 
@@ -361,7 +392,7 @@ def handle_action(state, seat, msg):
     # ── Radio Tower response ───────────────────────────────────────────────────
     if event == 'prompt_response' and seat == active_seat and state['phase'] == 'reroll_prompt':
         if msg.get('answer'):
-            dice = [random.randint(1, 6) for _ in range(len(state['last_dice']))]
+            dice = [roll_die() for _ in range(len(state['last_dice']))]
             total = sum(dice)
             doubles = (len(dice) == 2 and dice[0] == dice[1])
             state['last_dice']  = dice
@@ -386,7 +417,7 @@ def handle_action(state, seat, msg):
 
     # ── Tuna Boat interactive roll ────────────────────────────────────────────
     if event == 'tuna_roll' and seat == active_seat and state['phase'] == 'tuna_roll':
-        dice = [random.randint(1, 6), random.randint(1, 6)]
+        dice = [roll_die(), roll_die()]
         tuna_total = sum(dice)
         tuna_changes = {}
         tuna_seats = state.get('pending_prompt', {}).get('tuna_seats', [])

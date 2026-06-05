@@ -56,6 +56,13 @@ add_shortcode('mk_home', function () {
             <?php if (!is_user_logged_in()): ?>
             <input id="mk-guest-name" type="text" placeholder="Your name" maxlength="64" />
             <?php endif; ?>
+            <div id="mk-version-select" class="mk-version-select" role="radiogroup" aria-label="Game version">
+                <span class="mk-version-title">Game version</span>
+                <div class="mk-version-opts">
+                    <button type="button" class="mk-version-opt" data-version="basic" role="radio" aria-checked="false">🏙️ Basic</button>
+                    <button type="button" class="mk-version-opt is-active" data-version="harbour" role="radio" aria-checked="true">⚓ Harbour</button>
+                </div>
+            </div>
             <input id="mk-table-password" type="password" placeholder="Password (optional)" maxlength="64" autocomplete="new-password" />
             <div class="mk-create-btns">
                 <button id="mk-btn-create-public"  class="mk-btn mk-btn-primary">Create Public</button>
@@ -73,6 +80,9 @@ add_shortcode('mk_waiting_room', function () {
     <div id="mk-waiting-room" class="mk-page">
         <h1 class="mk-lobby-title">🪑 Table Lobby</h1>
         <p class="mk-lobby-sub">Share the code below to invite friends</p>
+        <div class="mk-version-row">
+            <span id="mk-table-version" class="mk-version-badge"></span>
+        </div>
         <div class="mk-code-display">
             <span class="mk-code-label">Join code</span>
             <span id="mk-table-code"></span>
@@ -273,6 +283,7 @@ add_shortcode('mk_game', function () {
         <div class="brand">
           <div class="brand-mark">🏯</div>
           <span>Machi Koro</span>
+          <span id="mk-game-version" class="mk-version-badge mk-version-badge-topbar"></span>
         </div>
         <div class="turn-banner">
           <span class="dot"></span>
@@ -346,7 +357,7 @@ add_shortcode('mk_game', function () {
               <div>
                 <div class="you-name" id="mk-my-name"></div>
                 <div class="you-sub">
-                  Harbor Expansion
+                  <span id="mk-my-version">Harbor Expansion</span>
                   <span id="mk-my-reaction" class="mk-my-reaction-bubble"></span>
                 </div>
               </div>

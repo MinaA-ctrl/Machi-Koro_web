@@ -1063,6 +1063,27 @@ body:has(#mk-home) footer.wp-block-template-part { display: none !important; }
 .mk-create-btns .mk-btn { flex: 1; min-width: 140px; }
 .mk-create-hint { font-size: 12px; color: var(--ink-mute); margin: 4px 0 0; text-align: center; }
 
+/* Version selector — segmented control built from the token palette */
+#mk-home .mk-version-select { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.mk-version-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-mute); }
+.mk-version-opts {
+  display: inline-flex; gap: 6px; padding: 5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #FFF7E6, #F2E0BB);
+  border: 2px solid var(--card-paper-edge);
+}
+#mk-home .mk-version-opt {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px;
+  padding: 8px 22px; border-radius: 999px; border: 2px solid transparent;
+  background: transparent; color: var(--ink-soft); cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+#mk-home .mk-version-opt:hover { color: var(--ink); }
+#mk-home .mk-version-opt.is-active {
+  background: linear-gradient(180deg, var(--gold), var(--gold-d));
+  color: #fff; box-shadow: var(--shadow-1);
+}
+
 /* Buttons — match the lobby (#mk-waiting-room) pill treatment */
 #mk-home .mk-btn {
   font-family: 'Fredoka', sans-serif; font-weight: 600;
@@ -1186,6 +1207,19 @@ body:has(#mk-waiting-room) footer.wp-block-template-part { display: none !import
 
 /* Lobby toast */
 #mk-lobby-toast { position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:1000;display:flex;flex-direction:column;gap:8px;pointer-events:none; }
+
+/* Version badge — shared by the lobby (.mk-version-row) and the in-game topbar */
+.mk-version-row { margin: -8px 0 20px; }
+.mk-version-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: 'Fredoka', sans-serif; font-weight: 700;
+  font-size: 12px; letter-spacing: .3px;
+  padding: 4px 12px; border-radius: 999px;
+  background: linear-gradient(180deg, var(--gold), var(--gold-d));
+  color: #fff; box-shadow: var(--shadow-1);
+}
+.mk-version-badge:empty { display: none; }
+.mk-version-badge-topbar { flex-shrink: 0; font-size: 11px; padding: 3px 10px; box-shadow: none; }
 
 /* ===== Rules — Cozy Tabletop ===== */
 body:has(#mk-rules) {
