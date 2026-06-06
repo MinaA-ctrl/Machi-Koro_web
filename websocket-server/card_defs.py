@@ -31,7 +31,62 @@ CARD_DEFS = {
     'business_center':   {'id': 'business_center',    'name': 'Business Center',   'dice': [6],        'type': 'Purple Major',    'cost': 8,  'symbol': 'tower',   'effect': 'Trade one non-Major establishment with an opponent.', 'max_per_player': 1},
     'publisher':         {'id': 'publisher',          'name': 'Publisher',         'dice': [7],        'type': 'Purple Major',    'cost': 5,  'symbol': 'tower',   'effect': 'Take 1 coin per cup/bread symbol card from each opponent.', 'max_per_player': 1},
     'tax_office':        {'id': 'tax_office',         'name': 'Tax Office',        'dice': [8,9],      'type': 'Purple Major',    'cost': 4,  'symbol': 'tower',   'effect': 'Take half coins (rounded down) from each opponent with 10+ coins.', 'max_per_player': 1},
+
+    # ── Sharp / Millionaire's Row — Tier 1 (Phase A) ───────────────────────────
+    # Composable add-on layered onto Basic or Harbour via build_config(.., sharp=True);
+    # they are NOT part of plain Basic/Harbour (see SHARP_TIER1_IDS below).
+    # Tier-1 symbols are intentionally cosmetic — none are cup/bread, so Shopping
+    # Mall never applies, and none reuse 'wheat', so Farmers Market doesn't count
+    # them. The other 7 MR cards (Tier 2) arrive in Phases B/C.
+    'vineyard':            {'id': 'vineyard',            'name': 'Vineyard',            'dice': [7],        'type': 'Blue Primary',    'cost': 3, 'symbol': 'grape',      'effect': 'Get 3 coins from the bank.'},
+    'corn_field':          {'id': 'corn_field',          'name': 'Corn Field',          'dice': [3,4],      'type': 'Blue Primary',    'cost': 2, 'symbol': 'grain',      'effect': 'If you have 1 or fewer landmarks, get 1 coin from the bank.'},
+    'general_store':       {'id': 'general_store',       'name': 'General Store',       'dice': [2],        'type': 'Green Secondary', 'cost': 0, 'symbol': 'store',      'effect': 'On your turn, if you have 1 or fewer landmarks, get 2 coins from the bank.'},
+    'soda_bottling_plant': {'id': 'soda_bottling_plant', 'name': 'Soda Bottling Plant', 'dice': [11],       'type': 'Green Secondary', 'cost': 5, 'symbol': 'factory',    'effect': 'Get 1 coin for each Restaurant (red) establishment owned by all players.'},
+    'french_restaurant':   {'id': 'french_restaurant',   'name': 'French Restaurant',   'dice': [5],        'type': 'Red Restaurant',  'cost': 3, 'symbol': 'restaurant', 'effect': 'If the active player has 2+ landmarks, take 5 coins from them.'},
+    'private_club':        {'id': 'private_club',         'name': 'Private Club',        'dice': [12,13,14], 'type': 'Red Restaurant',  'cost': 4, 'symbol': 'restaurant', 'effect': 'If the active player has 3+ landmarks, take all their coins.'},
+
+    # ── Sharp / Millionaire's Row — Phase B (Renovation) ──────────────────────
+    # Symbols cosmetic, as Tier 1 (not cup/bread/wheat). The Renovation mechanic
+    # lives in the engine's renovation state, not in the card data; see the seam doc.
+    'winery':            {'id': 'winery',            'name': 'Winery',            'dice': [9],  'type': 'Green Secondary', 'cost': 3, 'symbol': 'factory', 'effect': 'Get 6 coins per Vineyard you own, then this card closes for renovation.'},
+    'cleaning_company':  {'id': 'cleaning_company',  'name': 'Cleaning Company',  'dice': [8],  'type': 'Purple Major',    'cost': 4, 'symbol': 'tower',   'effect': 'Close every copy of one non-Major establishment across all players for renovation; collect 1 coin per copy closed.', 'max_per_player': 1},
+
+    # ── Sharp / Millionaire's Row — Phase C1 ──────────────────────────────────
+    # Loan Office: build-time payout + a NEGATIVE activation (pay the bank), floored
+    # at 0. Park / Tech Startup carry new state (redistribution / persistent invest);
+    # the mechanics live in the engine, not the card data. See the seam doc.
+    'loan_office':   {'id': 'loan_office',   'name': 'Loan Office',   'dice': [5,6],     'type': 'Green Secondary', 'cost': 0, 'symbol': 'loan',  'effect': 'When built, take 5 coins from the bank. When activated, pay 2 coins to the bank.'},
+    'tech_startup':  {'id': 'tech_startup',  'name': 'Tech Startup',  'dice': [10],      'type': 'Purple Major',    'cost': 1, 'symbol': 'tower', 'effect': 'On your turn you may invest 1 coin onto this card. When activated, each opponent pays you the total invested.', 'max_per_player': 1},
+    'park':          {'id': 'park',          'name': 'Park',          'dice': [11,12,13],'type': 'Purple Major',    'cost': 3, 'symbol': 'tower', 'effect': 'Pool all coins from all players and redistribute them equally (remainder to the active player).', 'max_per_player': 1},
+
+    # ── Sharp / Millionaire's Row — Phase C2 (interactive; finale) ─────────────
+    # Demolition Company breaks the "landmarks only increase" invariant (built →
+    # unbuilt). Both are interactive; the mechanics live in the engine handlers.
+    'demolition_company': {'id': 'demolition_company', 'name': 'Demolition Company', 'dice': [4],   'type': 'Green Secondary', 'cost': 2, 'symbol': 'gear',  'effect': 'Demolish one of your constructed landmarks (not City Hall), then get 8 coins from the bank.'},
+    'moving_company':     {'id': 'moving_company',     'name': 'Moving Company',     'dice': [9,10],'type': 'Green Secondary', 'cost': 2, 'symbol': 'truck', 'effect': 'Give one of your non-Major establishments to another player, then get 4 coins from the bank.'},
 }
+
+# Sharp Phase-A pool ("Tier 1"). Kept separate so plain Harbour (derived from
+# CARD_DEFS) can exclude it — Sharp is opt-in via the composable config.
+SHARP_TIER1_IDS = (
+    'vineyard', 'corn_field', 'general_store',
+    'soda_bottling_plant', 'french_restaurant', 'private_club',
+)
+
+# Sharp Phase-B pool (Renovation).
+SHARP_PHASE_B_IDS = ('winery', 'cleaning_company')
+
+# Sharp Phase-C1 pool (build-time payout / redistribution / persistent invest).
+SHARP_PHASE_C1_IDS = ('loan_office', 'tech_startup', 'park')
+
+# Sharp Phase-C2 pool (interactive finale): landmark-loss + card transfer.
+SHARP_PHASE_C2_IDS = ('demolition_company', 'moving_company')
+
+# The full enabled Sharp pool (all 13) that build_config layers on. Composition
+# (config + Harbour exclusion) keys off this, so each phase only extends a tuple.
+SHARP_CARD_IDS = (
+    SHARP_TIER1_IDS + SHARP_PHASE_B_IDS + SHARP_PHASE_C1_IDS + SHARP_PHASE_C2_IDS
+)
 
 LANDMARK_DEFS = [
     {'id': 'city_hall',      'name': 'City Hall',      'cost': 0,  'pre_built': True,  'effect': 'After income, if you have 0 coins, get 1 coin from the bank.'},

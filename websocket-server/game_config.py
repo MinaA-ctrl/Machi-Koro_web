@@ -18,8 +18,8 @@ Sharp (= Millionaire's Row) is a later slice; see
 `Developer stages/sprint-2-handoffs/sharp-card-reference.md`.
 """
 
-from dataclasses import dataclass, field
-from card_defs import CARD_DEFS, LANDMARK_DEFS
+from dataclasses import dataclass, field, replace
+from card_defs import CARD_DEFS, LANDMARK_DEFS, SHARP_CARD_IDS
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,10 @@ class GameConfig:
     # Cards each player starts owning, e.g. {'wheat_field': 1, 'bakery': 1}.
     starting_cards: dict = field(default_factory=lambda: {'wheat_field': 1, 'bakery': 1})
     starting_coins: int = 3
+    # Whether the Sharp (Millionaire's Row) add-on is layered on. A config is
+    # fully identified by (base, sharp); this flag is the persisted seam Phase D
+    # stores alongside game_version. Plain Basic/Harbour leave it False.
+    sharp: bool = False
 
     def __post_init__(self):
         # Fail fast on a malformed config rather than mid-game.
@@ -72,15 +76,55 @@ BASE_GAME = GameConfig(
 
 
 # ── Harbour (current live default = Base + Harbor expansion) ──────────────────
-# All cards/landmarks the engine ships today. Built from the existing defs so
-# this stays in lockstep with card_defs.py and preserves current behavior.
+# All non-Sharp cards/landmarks the engine ships today. Derived from the defs so
+# it stays in lockstep with card_defs.py and preserves current behavior; the
+# Sharp Phase-A cards are excluded so they never leak into plain Harbour — Sharp
+# is opt-in only, via build_config(..., sharp=True).
+HARBOUR_ESTABLISHMENTS = tuple(cid for cid in CARD_DEFS if cid not in SHARP_CARD_IDS)
+
 HARBOUR_GAME = GameConfig(
     name='Harbour',
-    establishment_ids=tuple(CARD_DEFS.keys()),
+    establishment_ids=HARBOUR_ESTABLISHMENTS,
     landmark_ids=tuple(lm['id'] for lm in LANDMARK_DEFS),
 )
 
 
+# ── Sharp (Millionaire's Row) — composable add-on ─────────────────────────────
+# Sharp is not a third version: it's a "+ Sharp" flag that layers the Millionaire's
+# Row cards onto either base. build_config(base, sharp) is the composition seam —
+# Phases B/C add more cards to SHARP_TIER1_IDS, Phase D persists (game_version, sharp).
+
+def build_config(base, sharp=False):
+    """Compose a GameConfig = `base` (Basic/Harbour) + optional Sharp add-on.
+
+    Sharp appends the Sharp establishment pool to the base's supply and sets the
+    `sharp` flag; landmarks, starting hand, and starting coins are the base's
+    (Sharp adds no landmarks). With sharp=False the base is returned unchanged, so
+    plain Basic/Harbour keep their identity.
+    """
+    if not sharp:
+        return base
+    return replace(
+        base,
+        name=f"{base.name} + Sharp",
+        establishment_ids=base.establishment_ids + SHARP_CARD_IDS,
+        sharp=True,
+    )
+
+
+BASE_SHARP_GAME    = build_config(BASE_GAME, sharp=True)      # "Basic + Sharp"
+HARBOUR_SHARP_GAME = build_config(HARBOUR_GAME, sharp=True)   # "Harbour + Sharp"
+
+# Sharp sibling per base, keyed by the base config's name (configs aren't hashable
+# — they carry a dict field — so we key by name rather than by the object).
+_SHARP_BY_BASE_NAME = {
+    BASE_GAME.name.lower():    BASE_SHARP_GAME,
+    HARBOUR_GAME.name.lower(): HARBOUR_SHARP_GAME,
+}
+
+
+# Version *keys* for the base picker. Sharp is a separate flag, not a key here —
+# Phase D persists it as its own column, so CONFIGS stays the two base versions.
 CONFIGS = {
     'basic':   BASE_GAME,
     'harbour': HARBOUR_GAME,
@@ -90,19 +134,39 @@ CONFIGS = {
 # ('Basic') resolve to the same config. The table-creation path stores and reads
 # the version *key*; a rematch reads the engine's stored config *name*
 # (state['version']). Both must land on the same config, so we index by both.
+# Composed configs are registered by name too ("Basic + Sharp") so a finished
+# Sharp game round-trips on rematch via state['version'].
 _VERSION_ALIASES = {}
 for _key, _cfg in CONFIGS.items():
     _VERSION_ALIASES[_key.lower()] = _cfg
     _VERSION_ALIASES[_cfg.name.lower()] = _cfg
+for _cfg in (BASE_SHARP_GAME, HARBOUR_SHARP_GAME):
+    _VERSION_ALIASES[_cfg.name.lower()] = _cfg
 
 
 def config_for_version(version):
-    """Resolve a stored game_version to its GameConfig, defaulting to Harbour.
+    """Resolve a stored game_version (or config name) to its GameConfig.
 
-    Unknown or missing versions fall back to HARBOUR_GAME — this preserves the
-    current live behavior and stays back-compat for tables created before the
-    game_version column existed (their value reads as NULL or 'harbour').
+    Defaults to HARBOUR_GAME for unknown/missing values — this preserves current
+    live behavior and stays back-compat for tables created before the game_version
+    column existed (NULL or 'harbour'). Recognizes composed names ("Basic + Sharp")
+    so a Sharp game's state['version'] round-trips on rematch.
     """
     if isinstance(version, str):
         return _VERSION_ALIASES.get(version.strip().lower(), HARBOUR_GAME)
     return HARBOUR_GAME
+
+
+def config_for(base, sharp=False):
+    """Resolve a (base, sharp) pair to its composed GameConfig.
+
+    This is the seam Phase D uses once the `sharp` flag is persisted: it stores
+    (game_version, sharp) and calls config_for(game_version, sharp). `base` may be
+    a version key ('basic'/'harbour') or a config name; it's normalized through
+    config_for_version, then the Sharp sibling is selected when sharp=True.
+    Returns the canonical singletons, so round-trips compare equal by identity.
+    """
+    base_cfg = config_for_version(base)
+    if not sharp or base_cfg.sharp:
+        return base_cfg
+    return _SHARP_BY_BASE_NAME.get(base_cfg.name.lower(), base_cfg)
