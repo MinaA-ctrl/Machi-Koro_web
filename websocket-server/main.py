@@ -8,7 +8,7 @@ import time
 import aiomysql
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from game_engine import create_initial_state, handle_action, calculate_scores
-from game_config import config_for_version
+from game_config import config_for_version, config_for
 
 # Shared HMAC secret for verifying game WS tokens (must match the WordPress service)
 MK_WS_SECRET = os.getenv('MK_WS_SECRET', '')
@@ -484,7 +484,7 @@ async def _load_or_create_state(code: str):
         conn = await db_connect()
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
-                "SELECT id, game_version FROM wp_mk_tables WHERE code=%s AND status='playing'",
+                "SELECT id, game_version, sharp FROM wp_mk_tables WHERE code=%s AND status='playing'",
                 (code,)
             )
             table = await cur.fetchone()
@@ -515,10 +515,11 @@ async def _load_or_create_state(code: str):
             if not players:
                 return None
 
-            # Build the right version's game from the table's game_version
-            # (defensive: unknown/missing → Harbour, see config_for_version).
+            # Build the right composed config from the table's (game_version, sharp)
+            # (D-BE). config_for normalizes the base and layers Sharp when the flag
+            # is set; unknown/missing base → Harbour, falsy sharp → no add-on.
             state = create_initial_state(
-                players, config=config_for_version(table.get('game_version'))
+                players, config=config_for(table.get('game_version'), table.get('sharp'))
             )
 
             # ON DUPLICATE KEY UPDATE: if another process/connection inserted the

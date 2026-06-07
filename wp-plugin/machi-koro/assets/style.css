@@ -1084,6 +1084,39 @@ body:has(#mk-home) footer.wp-block-template-part { display: none !important; }
   color: #fff; box-shadow: var(--shadow-1);
 }
 
+/* Sharp add-on toggle — a checkbox styled from the token palette. Composes with
+   either base above, so it's a toggle, not a third version option. */
+#mk-home .mk-sharp-toggle {
+  display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+  align-self: center; padding: 8px 16px; border-radius: 999px;
+  background: linear-gradient(180deg, #FFF7E6, #F2E0BB);
+  border: 2px solid var(--card-paper-edge);
+  transition: border-color .15s, box-shadow .15s;
+}
+#mk-home .mk-sharp-toggle:hover { border-color: var(--gold-d); }
+.mk-sharp-toggle input { position: absolute; opacity: 0; width: 0; height: 0; }
+.mk-sharp-box {
+  width: 22px; height: 22px; border-radius: 7px; flex-shrink: 0;
+  background: #FFF7E6; border: 2px solid var(--ink-mute);
+  display: grid; place-items: center;
+  transition: background .15s, border-color .15s;
+}
+.mk-sharp-box::after {
+  content: '✓'; color: #fff; font-size: 14px; font-weight: 800; opacity: 0;
+  transition: opacity .15s;
+}
+.mk-sharp-toggle input:checked + .mk-sharp-box {
+  background: linear-gradient(180deg, var(--gold), var(--gold-d));
+  border-color: var(--gold-d);
+}
+.mk-sharp-toggle input:checked + .mk-sharp-box::after { opacity: 1; }
+.mk-sharp-toggle input:focus-visible + .mk-sharp-box { box-shadow: 0 0 0 3px rgba(232,181,60,.5); }
+.mk-sharp-text {
+  font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px; color: var(--ink);
+  display: flex; flex-direction: column; line-height: 1.2; text-align: left;
+}
+.mk-sharp-text small { font-weight: 600; font-size: 11px; color: var(--ink-mute); }
+
 /* Buttons — match the lobby (#mk-waiting-room) pill treatment */
 #mk-home .mk-btn {
   font-family: 'Fredoka', sans-serif; font-weight: 600;

@@ -100,3 +100,20 @@ jobs:
           wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'game_version'" --path=wp \
             | grep -q game_version
           echo "migration: game_version restored on existing table"
+
+      - name: Fresh install has sharp
+        run: |
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'sharp'" --path=wp \
+            | grep -q sharp
+          echo "fresh install: sharp present"
+
+      - name: Migration restores sharp on a pre-D table
+        # Same negative-proof as game_version (D-BE): drop the column, clear the
+        # schema-version flag, run the explicit migration, and assert sharp is back.
+        run: |
+          wp db query "ALTER TABLE wp_mk_tables DROP COLUMN sharp" --path=wp
+          wp option delete mk_db_version --path=wp
+          wp eval 'mk_migrate();' --path=wp
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'sharp'" --path=wp \
+            | grep -q sharp
+          echo "migration: sharp restored on existing table"

@@ -11,6 +11,7 @@ function mk_install() {
         code VARCHAR(12) NOT NULL UNIQUE,
         name VARCHAR(80) NOT NULL,
         game_version VARCHAR(16) NOT NULL DEFAULT 'harbour',
+        sharp TINYINT(1) NOT NULL DEFAULT 0,
         host_id VARCHAR(64) NOT NULL,
         password_hash VARCHAR(255) DEFAULT NULL,
         is_public TINYINT(1) DEFAULT 1,
@@ -77,6 +78,19 @@ function mk_migrate() {
         // current live version, preserving their behavior.
         $wpdb->query("ALTER TABLE {$tables}
             ADD COLUMN game_version VARCHAR(16) NOT NULL DEFAULT 'harbour' AFTER name");
+    }
+
+    // D-BE: sharp add-on flag (Millionaire's Row layered on the base version).
+    // Same guarded-ALTER pattern as game_version above. DEFAULT 0 backfills
+    // existing tables to "no Sharp", preserving their behavior.
+    $has_sharp = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'sharp'",
+        DB_NAME, $tables
+    ));
+    if (!$has_sharp) {
+        $wpdb->query("ALTER TABLE {$tables}
+            ADD COLUMN sharp TINYINT(1) NOT NULL DEFAULT 0 AFTER game_version");
     }
 }
 

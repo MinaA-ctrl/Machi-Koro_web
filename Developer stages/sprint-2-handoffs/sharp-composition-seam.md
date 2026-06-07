@@ -5,9 +5,10 @@
 > **160 tests green** (`cd websocket-server && python3 -m pytest -q`).
 > A: composition + 6 Tier-1. B: Renovation + Winery & Cleaning Company. C1: Loan
 > Office, Park, Tech Startup. C2: Demolition & Moving Company (see "Phase C2").
-> The Sharp pool is **complete at 13 cards**. Remaining Sharp work is **Phase D**
-> (DB `sharp` flag + UI prompts + browser QA) — engine handlers for every
-> interactive card already exist and are test-driven.
+> The Sharp pool is **complete at 13 cards**. **Phase D-BE (storage + wiring) is
+> also done** (DB `sharp` column + REST + config wiring; php-ci green incl. the new
+> column assertion — see "Phase D-BE" below). Remaining: **D-WEB** (frontend toggle
+> + interactive prompt UIs + browser QA) and **Phase E** (Variable Supply).
 
 Sharp (Millionaire's Row) is a **composable add-on, not a third version**: a
 `+ Sharp` flag that layers the MR cards onto either base. This note is the seam
@@ -51,13 +52,31 @@ Two resolvers, both returning the singletons:
   with `config_for(game_version, sharp)`. `base` may be a key ('basic'/'harbour')
   or a name; it's normalized through `config_for_version`.
 
-### Phase D wiring (when you get there)
-- Add a `sharp TINYINT(1) NOT NULL DEFAULT 0` column via a **guarded `mk_migrate`
-  ALTER** + bump `MK_DB_VERSION` (see `migration-discipline.md`).
-- At both `create_initial_state` call sites in `main.py` (table start + rematch),
-  switch `config_for_version(...)` → `config_for(game_version, sharp)`.
-- Rematch already round-trips on the name even before that switch, so the two can
-  land independently.
+### Phase D-BE — storage + wiring ✅ DONE (2026-06-06)
+The `sharp` flag is now persisted and wired through (engine unchanged). CI-proven
+(php-ci green incl. the new column assertions). What shipped:
+- **DB:** `sharp TINYINT(1) NOT NULL DEFAULT 0` on `wp_mk_tables`, added in
+  `mk_install`'s `CREATE TABLE` **and** via a guarded `mk_migrate()` ALTER (same
+  pattern as `game_version`; `MK_DB_VERSION` bumped 2 → 3 so live installs migrate
+  without reactivation). DEFAULT 0 backfills pre-D tables to "no Sharp".
+- **Wiring:** `main.py` table-start uses `config_for(table.game_version,
+  table.sharp)`. Rematch stays on `config_for_version(state['version'])` — composed
+  names ("Harbour + Sharp") already round-trip (Phase A), confirmed for both paths.
+- **CI:** php-ci's migration job now also asserts `sharp` on a fresh install and
+  after drop + `mk_migrate()` (same negative-proof as `game_version`).
+
+### API contract for D-WEB (frontend)
+- **Create table** `POST /machi-koro/v1/tables` accepts a **`sharp`** field —
+  boolean, **optional, default `false`** (parsed with `rest_sanitize_boolean`, so
+  real bools and `"true"`/`"false"`/`"1"`/`"0"` all work). Sits alongside the
+  existing `version` (`'basic'`|`'harbour'`) field. The pair (version, sharp) picks
+  the composed config.
+- **`GET /tables`** and **`GET /tables/{code}`** now return **`sharp`** (real JSON
+  boolean) alongside `game_version`. Render the label as `"<Version> + Sharp"` when
+  `sharp` is true (engine's config name is e.g. `"Harbour + Sharp"`).
+- Still TODO in D-WEB: the create-table toggle UI + the interactive prompt UIs for
+  every Sharp interactive card (TV Station / Business Center / Cleaning / Demolition
+  / Moving picks + the Tech Startup invest button) + real-browser QA.
 
 ## Tier-1 cards (`card_defs.py` + `game_engine.resolve_cards`)
 

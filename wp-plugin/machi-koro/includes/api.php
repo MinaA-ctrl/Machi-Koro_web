@@ -45,7 +45,7 @@ function mk_api_list_tables($req) {
     $like = '%' . $wpdb->esc_like($search) . '%';
 
     $rows = $wpdb->get_results($wpdb->prepare(
-        "SELECT t.id, t.code, t.name, t.game_version, t.is_public, t.status,
+        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.is_public, t.status,
                 (t.password_hash IS NOT NULL) AS is_protected,
                 COUNT(p.id) AS player_count
          FROM {$wpdb->prefix}mk_tables t
@@ -60,6 +60,7 @@ function mk_api_list_tables($req) {
     // Cast so JSON carries a real boolean — the string "0" would be truthy in JS.
     foreach ($rows as $r) {
         $r->is_protected = (bool) $r->is_protected;
+        $r->sharp        = (bool) $r->sharp;
         $r->player_count = (int) $r->player_count;
     }
 
@@ -95,12 +96,18 @@ function mk_api_create_table($req) {
         $version = 'harbour';
     }
 
+    // Sharp add-on (D-BE): boolean, default false. The base version above and this
+    // flag together identify the composed config (engine config_for(version, sharp)).
+    // rest_sanitize_boolean handles real bools and "true"/"false"/"1"/"0" strings.
+    $sharp = rest_sanitize_boolean($req->get_param('sharp') ?? false);
+
     $code = mk_generate_code();
 
     $data = [
         'code'         => $code,
         'name'         => $name,
         'game_version' => $version,
+        'sharp'        => $sharp ? 1 : 0,
         'host_id'      => $host_id,
         'is_public'    => $public ? 1 : 0,
     ];
@@ -129,13 +136,14 @@ function mk_api_get_table($req) {
     // WEB-001: never SELECT t.* here — that leaked password_hash and host_id to a
     // public endpoint. Expose only safe columns + the derived is_protected flag.
     $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT t.id, t.code, t.name, t.game_version, t.is_public, t.status, t.created_at,
+        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.is_public, t.status, t.created_at,
                 (t.password_hash IS NOT NULL) AS is_protected
          FROM {$wpdb->prefix}mk_tables t WHERE t.code = %s",
         $code
     ));
     if (!$row) return mk_err('not_found', 'Table not found', 404);
     $row->is_protected = (bool) $row->is_protected;
+    $row->sharp        = (bool) $row->sharp;
 
     $players = $wpdb->get_results($wpdb->prepare(
         "SELECT p.id, p.seat, p.is_host, p.user_id, p.guest_name,

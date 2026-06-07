@@ -63,6 +63,13 @@ add_shortcode('mk_home', function () {
                     <button type="button" class="mk-version-opt is-active" data-version="harbour" role="radio" aria-checked="true">⚓ Harbour</button>
                 </div>
             </div>
+            <!-- Sharp (Millionaire's Row) is a composable add-on, not a third version —
+                 it layers onto whichever base is selected above. Default off. -->
+            <label id="mk-sharp-toggle" class="mk-sharp-toggle">
+                <input type="checkbox" id="mk-sharp-check" />
+                <span class="mk-sharp-box" aria-hidden="true"></span>
+                <span class="mk-sharp-text">+ Sharp <small>Millionaire's Row add-on</small></span>
+            </label>
             <input id="mk-table-password" type="password" placeholder="Password (optional)" maxlength="64" autocomplete="new-password" />
             <div class="mk-create-btns">
                 <button id="mk-btn-create-public"  class="mk-btn mk-btn-primary">Create Public</button>
@@ -332,6 +339,9 @@ add_shortcode('mk_game', function () {
           <span class="dice-sum" id="mk-dice-sum" style="display:none"></span>
         </div>
         <div class="action-stack">
+          <!-- Tech Startup (Sharp): a build-phase action, not a prompt. Shown only when
+               you own Tech Startup and haven't invested this turn (toggled in render). -->
+          <button class="btn btn-secondary" id="mk-btn-invest" style="display:none">Invest 1 🪙</button>
           <button class="btn btn-secondary" id="mk-btn-skip" style="display:none">End Turn</button>
         </div>
       </div>

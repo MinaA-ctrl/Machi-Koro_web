@@ -10,7 +10,7 @@ if (!defined('ABSPATH')) exit;
 define('MK_VERSION', '0.1.0');
 // Schema version: bump whenever a migration is added to mk_migrate(). Kept
 // separate from MK_VERSION so schema changes are independent of plugin releases.
-define('MK_DB_VERSION', '2');
+define('MK_DB_VERSION', '3');   // 3: + sharp column (D-BE)
 define('MK_DIR', plugin_dir_path(__FILE__));
 define('MK_URL', plugin_dir_url(__FILE__));
 

@@ -169,6 +169,8 @@ if (document.getElementById('mk-home')) {
             is_public:  isPublic,
             guest_name: $('mk-guest-name')?.value || 'Guest',
             version:    selectedVersion(),
+            // Sharp composes with either base (D-BE field name = `sharp`); default off.
+            sharp:      $('mk-sharp-check')?.checked || false,
         };
         // Only send a password when the host actually set one — protects the table.
         if (password) body.password = password;
@@ -196,7 +198,8 @@ if (document.getElementById('mk-waiting-room')) {
 
     async function init() {
         const table = await api.get('/tables/' + code);
-        const v = mkVersionInfo(table.game_version);
+        // Lobby composes the label from the two GET fields (game_version + sharp).
+        const v = mkVersionInfo(table.game_version, table.sharp);
         const vEl = $('mk-table-version');
         if (vEl) vEl.textContent = `${v.icon} ${v.full}`;
         renderPlayers(table.players);
@@ -366,6 +369,9 @@ if (document.getElementById('mk-game')) {
     const SYMBOLS = {
         wheat:'🌾', cow:'🐄', cup:'☕', bread:'🍞',
         factory:'🏭', fish:'🐟', fruit:'🍎', gear:'⚙️', tower:'🏰',
+        // Sharp (Millionaire's Row) symbols — deliberately distinct from wheat/cup/bread
+        // so Shopping Mall / Farmers Market never apply (see sharp-composition-seam.md).
+        grape:'🍇', grain:'🌽', store:'🏪', restaurant:'🍽️', loan:'🏦', truck:'🚚',
     };
     const LANDMARK_ICONS = {
         train_station:'🚂', shopping_mall:'🛍️', amusement_park:'🎡',
@@ -383,6 +389,8 @@ if (document.getElementById('mk-game')) {
     const PHASE_LABELS = {
         roll: 'Roll Phase', tuna_roll: 'Tuna Roll',
         build: 'Build Phase', tv_station: 'TV Station',
+        cleaning_company: 'Cleaning Company', demolition: 'Demolition Company',
+        moving_company: 'Moving Company',
         business_center: 'Business Center', finished: 'Game Over',
     };
 
@@ -428,6 +436,31 @@ if (document.getElementById('mk-game')) {
                     toast(`🔄 ${name} is choosing a Business Center trade…`);
                 }
                 if (gameState.phase !== 'business_center') document.getElementById('mk-bc-overlay')?.remove();
+
+                // ── Sharp interactive phases (mirror tv_station / business_center) ──
+                // Each re-fires on every state_update while the phase holds; the
+                // multi-pick cards (Demolition, Moving) decrement pending_prompt.remaining
+                // server-side and stay in-phase until done, so the UI re-renders per pick.
+                if (gameState.phase === 'cleaning_company' && gameState.active_seat === mySeat) showCleaningCompanyUI(gameState);
+                if (gameState.phase === 'cleaning_company' && prevPhase !== 'cleaning_company' && gameState.active_seat !== mySeat) {
+                    const name = gameState.players.find(p => p.seat === gameState.active_seat)?.name ?? 'Active player';
+                    toast(`🧹 ${name} is using Cleaning Company…`);
+                }
+                if (gameState.phase !== 'cleaning_company') document.getElementById('mk-clean-overlay')?.remove();
+
+                if (gameState.phase === 'demolition' && gameState.active_seat === mySeat) showDemolitionUI(gameState);
+                if (gameState.phase === 'demolition' && prevPhase !== 'demolition' && gameState.active_seat !== mySeat) {
+                    const name = gameState.players.find(p => p.seat === gameState.active_seat)?.name ?? 'Active player';
+                    toast(`🏗️ ${name} is using Demolition Company…`);
+                }
+                if (gameState.phase !== 'demolition') document.getElementById('mk-demo-overlay')?.remove();
+
+                if (gameState.phase === 'moving_company' && gameState.active_seat === mySeat) showMovingCompanyUI(gameState);
+                if (gameState.phase === 'moving_company' && prevPhase !== 'moving_company' && gameState.active_seat !== mySeat) {
+                    const name = gameState.players.find(p => p.seat === gameState.active_seat)?.name ?? 'Active player';
+                    toast(`🚚 ${name} is using Moving Company…`);
+                }
+                if (gameState.phase !== 'moving_company') document.getElementById('mk-move-overlay')?.remove();
             }
 
             if (msg.event === 'prompt') showPrompt(msg.text, msg.promptId);
@@ -676,6 +709,18 @@ if (document.getElementById('mk-game')) {
         }
         if (skipBtn) skipBtn.style.display = showSkip ? '' : 'none';
 
+        // Tech Startup (Sharp C1) invest affordance — build-phase action, your turn,
+        // you own the card, and you haven't invested this turn (state.tech_invest_used).
+        const investBtn = document.getElementById('mk-btn-invest');
+        if (investBtn) {
+            const ownsTech   = (me.cards?.tech_startup ?? 0) > 0;
+            const canInvest  = isMyTurn && isBuild && ownsTech
+                               && !state.tech_invest_used && me.coins >= 1;
+            const invested   = me.investments?.tech_startup ?? 0;
+            investBtn.style.display = canInvest ? '' : 'none';
+            investBtn.textContent   = invested > 0 ? `Invest 1 🪙 (in: ${invested})` : 'Invest 1 🪙';
+        }
+
         // Dice result
         const diceEl = document.getElementById('mk-dice-result');
         const sumEl  = document.getElementById('mk-dice-sum');
@@ -822,6 +867,8 @@ if (document.getElementById('mk-game')) {
     });
 
     document.getElementById('mk-btn-skip').addEventListener('click', () => send('skip_build'));
+    // Tech Startup invest — visibility is driven by render(); the engine re-validates.
+    document.getElementById('mk-btn-invest')?.addEventListener('click', () => send('tech_startup_invest'));
 
     // ── Prompt overlay ────────────────────────────────
     function showPrompt(text, promptId, onYes, onNo, yesLabel = 'Yes', noLabel = 'No') {
@@ -961,6 +1008,140 @@ if (document.getElementById('mk-game')) {
         document.body.appendChild(overlay);
     }
 
+    // ── Sharp interactive prompts ─────────────────────
+    // Shared inline styles (mirrors the TV Station / Business Center overlays — this
+    // frontend is replaced by React in Stage 3, so we reuse the existing pattern
+    // rather than build new components).
+    const OVL_CSS  = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:998;';
+    const BOX_CSS  = 'background:#FFF7E6;color:#4E342E;border-radius:18px;padding:24px;max-width:460px;width:90%;max-height:82vh;overflow-y:auto;text-align:center;box-shadow:0 18px 30px rgba(78,52,46,.3);';
+    const HEAD_CSS = 'font-family:Fredoka,sans-serif;color:#B68724;margin:0 0 14px;';
+    const PICK_CSS = 'background:#FFF7E6;color:#4E342E;border:2px solid #E9D9B8;border-radius:10px;padding:12px 16px;cursor:pointer;font-size:15px;font-family:Fredoka,sans-serif;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:border-color .15s;';
+    const ccColors = { blue:'#5DADE2', green:'#7ABF7E', red:'#E08470', purple:'#A98BC4' };
+    const cardName = (state, id) => esc(state.card_defs[id]?.name ?? id);
+    const cardSym  = (state, id) => SYMBOLS[state.card_defs[id]?.symbol] ?? '🏢';
+
+    // Cleaning Company — pick one non-Major type to close board-wide (+1🪙/copy).
+    // pending_prompt: { type:'cleaning_company', targets:[card_id,...] }
+    function showCleaningCompanyUI(state) {
+        if (document.getElementById('mk-clean-overlay')) return;
+        const targets = state.pending_prompt?.targets ?? [];
+        if (!targets.length) return;
+
+        const overlay = document.createElement('div');
+        overlay.id = 'mk-clean-overlay';
+        overlay.style.cssText = OVL_CSS;
+        overlay.innerHTML = `
+            <div style="${BOX_CSS}">
+                <h3 style="${HEAD_CSS}">🧹 Cleaning Company</h3>
+                <p style="color:#A89281;font-weight:700;font-size:13px;margin:0 0 14px;">
+                    Close every open copy of one card across all players. You earn 1🪙 per copy closed.</p>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    ${targets.map(id => `
+                        <button onclick="cleanPick('${id}')" style="${PICK_CSS}">
+                            <span>${cardSym(state, id)} ${cardName(state, id)}</span>
+                        </button>`).join('')}
+                </div>
+            </div>`;
+        window.cleanPick = (id) => {
+            send('cleaning_company_pick', { card_type: id });
+            overlay.remove();
+            delete window.cleanPick;
+        };
+        document.body.appendChild(overlay);
+    }
+
+    // Demolition Company — demolish one of your built landmarks (+8🪙). Mandatory;
+    // sequential for multi-copy (pending_prompt.remaining counts down server-side).
+    // pending_prompt: { type:'demolition', remaining:N, targets:[landmark_id,...] }
+    function showDemolitionUI(state) {
+        if (document.getElementById('mk-demo-overlay')) return;
+        const pp = state.pending_prompt ?? {};
+        const targets = pp.targets ?? [];
+        if (!targets.length) return;
+        const me = state.players.find(p => p.seat === mySeat);
+        const lmName = id => esc(me?.landmarks.find(l => l.id === id)?.name ?? id);
+
+        const overlay = document.createElement('div');
+        overlay.id = 'mk-demo-overlay';
+        overlay.style.cssText = OVL_CSS;
+        overlay.innerHTML = `
+            <div style="${BOX_CSS}">
+                <h3 style="${HEAD_CSS}">🏗️ Demolition Company</h3>
+                <p style="color:#A89281;font-weight:700;font-size:13px;margin:0 0 14px;">
+                    Demolish one of your landmarks and collect 8🪙.${pp.remaining > 1 ? ` (${pp.remaining} to demolish)` : ''}</p>
+                <div style="display:flex;flex-direction:column;gap:10px;">
+                    ${targets.map(id => `
+                        <button onclick="demoPick('${id}')" style="${PICK_CSS}">
+                            <span>${LANDMARK_ICONS[id] ?? '🏛️'} ${lmName(id)}</span>
+                            <span style="color:#B68724;font-weight:700;">+8 🪙</span>
+                        </button>`).join('')}
+                </div>
+            </div>`;
+        window.demoPick = (id) => {
+            send('demolition_pick', { landmark_id: id });
+            overlay.remove();
+            delete window.demoPick;
+        };
+        document.body.appendChild(overlay);
+    }
+
+    // Moving Company — give one of your non-Major cards to another player (+4🪙).
+    // Mandatory; sequential for multi-copy. Two-step pick (card + target).
+    // pending_prompt: { type:'moving_company', remaining:N, giveable:[card_id,...], targets:[seat,...] }
+    function showMovingCompanyUI(state) {
+        if (document.getElementById('mk-move-overlay')) return;
+        const pp = state.pending_prompt ?? {};
+        const giveable = pp.giveable ?? [];
+        const seats    = pp.targets ?? [];
+        if (!giveable.length || !seats.length) return;
+        const players = state.players;
+        const seatName = s => esc(players.find(p => p.seat === s)?.name ?? `Seat ${s}`);
+
+        let selCard = null, selSeat = null;
+        const overlay = document.createElement('div');
+        overlay.id = 'mk-move-overlay';
+        overlay.style.cssText = OVL_CSS;
+
+        function renderMove() {
+            const cardsHTML = giveable.map(id => {
+                const cc = colorClass(state.card_defs[id]?.type);
+                const bg = ccColors[cc] ?? '#A89281';
+                return `<button onclick="moveCard('${id}')"
+                    style="background:${bg};color:#fff;border:2.5px solid ${selCard===id?'#4E342E':'transparent'};
+                           border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px;margin:3px;font-family:Nunito,sans-serif;">
+                    ${cardSym(state, id)} ${cardName(state, id)}</button>`;
+            }).join('');
+            const seatsHTML = seats.map(s =>
+                `<button onclick="moveSeat(${s})"
+                    style="background:#FFF7E6;color:#4E342E;border:2.5px solid ${selSeat===s?'#4E342E':'#E9D9B8'};
+                           border-radius:8px;padding:8px 14px;cursor:pointer;font-size:14px;margin:3px;font-family:Fredoka,sans-serif;font-weight:600;">
+                    ${seatName(s)}</button>`).join('');
+            const canConfirm = selCard && selSeat !== null;
+            overlay.innerHTML = `
+                <div style="${BOX_CSS}">
+                    <h3 style="${HEAD_CSS}">🚚 Moving Company</h3>
+                    <p style="color:#A89281;font-weight:700;font-size:13px;margin:0 0 12px;">
+                        Give one of your establishments to another player and collect 4🪙.${pp.remaining > 1 ? ` (${pp.remaining} to give)` : ''}</p>
+                    <p style="font-weight:700;color:#A89281;margin:0 0 6px;font-size:13px;">Card to give:</p>
+                    <div style="margin-bottom:14px;">${cardsHTML}</div>
+                    <p style="font-weight:700;color:#A89281;margin:0 0 6px;font-size:13px;">Give to:</p>
+                    <div style="margin-bottom:18px;">${seatsHTML}</div>
+                    <button onclick="moveConfirm()" class="btn btn-primary"
+                        style="opacity:${canConfirm?1:.4};" ${canConfirm?'':'disabled'}>Give Card</button>
+                </div>`;
+        }
+        window.moveCard    = id => { selCard = id; renderMove(); };
+        window.moveSeat    = s  => { selSeat = s;  renderMove(); };
+        window.moveConfirm = () => {
+            if (!selCard || selSeat === null) return;
+            send('moving_company_pick', { card_id: selCard, target_seat: selSeat });
+            overlay.remove();
+            ['moveCard','moveSeat','moveConfirm'].forEach(k => delete window[k]);
+        };
+        renderMove();
+        document.body.appendChild(overlay);
+    }
+
     // ── End screen ────────────────────────────────────
     function showEndScreen(state) {
         const overlay = document.getElementById('mk-end-overlay');
@@ -1000,15 +1181,27 @@ if (document.getElementById('mk-game')) {
     connectWS();
 }
 
-// ── Version labels (B4 contract) ──────────────────────────────────────────────
+// ── Version labels (B4 + Sharp/D-WEB contract) ────────────────────────────────
 // Accepts either the DB key ('basic'/'harbour' from GET /tables) or the engine's
-// config name ('Basic'/'Harbour' from the game state.version) — both normalize to
-// the same label. Unknown/missing → Harbour, matching the backend's defensive
+// config name (which arrives ALREADY composed for Sharp, e.g. 'Harbour + Sharp',
+// from game state.version). `sharp` is an optional explicit flag for the lobby,
+// which has game_version + sharp as separate GET fields. Sharp is detected from
+// either source. Unknown/missing → Harbour, matching the backend's defensive
 // version→config default.
-function mkVersionInfo(v) {
-    const key = String(v ?? '').trim().toLowerCase();
-    if (key === 'basic') return { key: 'basic', short: 'Basic', full: 'Base Game', icon: '🏙️' };
-    return { key: 'harbour', short: 'Harbour', full: 'Harbor Expansion', icon: '⚓' };
+function mkVersionInfo(v, sharp) {
+    const raw     = String(v ?? '').trim().toLowerCase();
+    const isSharp = sharp === true || raw.includes('sharp');
+    const isBasic = raw.startsWith('basic') || raw.startsWith('base');
+    const base = isBasic
+        ? { key: 'basic',   short: 'Basic',   full: 'Base Game',       icon: '🏙️' }
+        : { key: 'harbour', short: 'Harbour', full: 'Harbor Expansion', icon: '⚓' };
+    if (!isSharp) return base;
+    return {
+        key:   base.key + '+sharp',
+        short: base.short + ' + Sharp',
+        full:  base.full + ' + Sharp',
+        icon:  base.icon,
+    };
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
