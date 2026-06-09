@@ -171,6 +171,8 @@ if (document.getElementById('mk-home')) {
             version:    selectedVersion(),
             // Sharp composes with either base (D-BE field name = `sharp`); default off.
             sharp:      $('mk-sharp-check')?.checked || false,
+            // 10-card / Variable Supply — independent of sharp and version; default off.
+            variable_supply: $('mk-vs-check')?.checked || false,
         };
         // Only send a password when the host actually set one — protects the table.
         if (password) body.password = password;
@@ -198,8 +200,8 @@ if (document.getElementById('mk-waiting-room')) {
 
     async function init() {
         const table = await api.get('/tables/' + code);
-        // Lobby composes the label from the two GET fields (game_version + sharp).
-        const v = mkVersionInfo(table.game_version, table.sharp);
+        // Lobby composes the label from the GET fields (game_version + sharp + variable_supply).
+        const v = mkVersionInfo(table.game_version, table.sharp, table.variable_supply);
         const vEl = $('mk-table-version');
         if (vEl) vEl.textContent = `${v.icon} ${v.full}`;
         renderPlayers(table.players);
@@ -693,8 +695,10 @@ if (document.getElementById('mk-game')) {
         setEl('mk-my-name', me.name);
         setEl('mk-coin-count', me.coins);
 
-        // Game version label — topbar badge + drawer subtitle (B4: state.version)
-        const v = mkVersionInfo(state.version);
+        // Game version label — topbar badge + drawer subtitle. state.version already
+        // carries the composed base (+ Sharp); Variable Supply has no name suffix, so
+        // detect it from the runtime signal: state.deck exists only in VS games.
+        const v = mkVersionInfo(state.version, undefined, Array.isArray(state.deck));
         setEl('mk-game-version', `${v.icon} ${v.short}`);
         setEl('mk-my-version', v.full);
 
@@ -1181,27 +1185,26 @@ if (document.getElementById('mk-game')) {
     connectWS();
 }
 
-// ── Version labels (B4 + Sharp/D-WEB contract) ────────────────────────────────
+// ── Version labels (B4 + Sharp + Variable-Supply / D-WEB contract) ─────────────
 // Accepts either the DB key ('basic'/'harbour' from GET /tables) or the engine's
 // config name (which arrives ALREADY composed for Sharp, e.g. 'Harbour + Sharp',
-// from game state.version). `sharp` is an optional explicit flag for the lobby,
-// which has game_version + sharp as separate GET fields. Sharp is detected from
-// either source. Unknown/missing → Harbour, matching the backend's defensive
-// version→config default.
-function mkVersionInfo(v, sharp) {
+// from game state.version). `sharp` / `vs` are optional explicit flags for the
+// lobby (GET returns game_version + sharp + variable_supply as separate fields);
+// in-game, Sharp is read from the composed name and VS from state.deck's presence.
+// Both add-ons are independent. Unknown/missing → Harbour, matching the backend's
+// defensive version→config default.
+function mkVersionInfo(v, sharp, vs) {
     const raw     = String(v ?? '').trim().toLowerCase();
     const isSharp = sharp === true || raw.includes('sharp');
+    const isVS    = vs === true || raw.includes('10-card');
     const isBasic = raw.startsWith('basic') || raw.startsWith('base');
     const base = isBasic
         ? { key: 'basic',   short: 'Basic',   full: 'Base Game',       icon: '🏙️' }
         : { key: 'harbour', short: 'Harbour', full: 'Harbor Expansion', icon: '⚓' };
-    if (!isSharp) return base;
-    return {
-        key:   base.key + '+sharp',
-        short: base.short + ' + Sharp',
-        full:  base.full + ' + Sharp',
-        icon:  base.icon,
-    };
+    let key = base.key, short = base.short, full = base.full;
+    if (isSharp) { key += '+sharp'; short += ' + Sharp';   full += ' + Sharp'; }
+    if (isVS)    { key += '+vs';    short += ' · 10-card';  full += ' · 10-card'; }
+    return { key, short, full, icon: base.icon };
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

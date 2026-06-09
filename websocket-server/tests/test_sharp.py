@@ -106,7 +106,10 @@ class TestComposition:
         assert build_config(HARBOUR_GAME, sharp=False) is HARBOUR_GAME
 
     def test_created_state_supply_and_market(self):
-        s = make(BASE_SHARP_GAME, num_players=2)
+        # Verify the composed *pool* (all 13 Sharp types at full counts). Sharp now
+        # defaults to Variable Supply (only 10 face-up), so pin it off here to see
+        # the whole classic supply; Variable Supply has its own test module.
+        s = make(build_config(BASE_GAME, sharp=True, variable_supply=False), num_players=2)
         assert s["version"] == "Basic + Sharp"
         for cid in SHARP_TIER1_IDS + ("winery", "loan_office",
                                       "demolition_company", "moving_company"):
@@ -154,7 +157,10 @@ class TestRoundTrip:
             config=config_for_version(finished["version"]),
         )
         assert rebuilt["version"] == "Harbour + Sharp"
-        assert set(rebuilt["supply"]) == set(finished["supply"])
+        # Same composed config resolves on rematch. Variable Supply randomizes which
+        # 10 are face-up per game, so compare the full card pool (face-up + deck).
+        pool = lambda s: set(s["supply"]) | set(s.get("deck", []))
+        assert pool(rebuilt) == pool(finished)
 
 
 # ── 3. landmarks_built helper ────────────────────────────────────────────────

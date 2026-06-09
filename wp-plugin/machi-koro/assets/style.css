@@ -1117,6 +1117,20 @@ body:has(#mk-home) footer.wp-block-template-part { display: none !important; }
 }
 .mk-sharp-text small { font-weight: 600; font-size: 11px; color: var(--ink-mute); }
 
+/* Game-setup cluster — version picker + the two host toggles, read as one group.
+   The toggles sit BESIDE the Basic/Harbour picker; on narrow screens the row wraps
+   so the toggles fall below. The create panel is a touch wider than the browse panel
+   to fit the picker + toggles on one line. */
+#mk-create-panel { max-width: 600px; }
+#mk-home .mk-setup { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.mk-setup-title { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-mute); }
+.mk-setup-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center; }
+.mk-setup-toggles { display: flex; flex-direction: column; gap: 10px; max-width: 330px; }
+/* In the cluster the two toggles stack and share a width (override the standalone
+   content-width centering used when Sharp shipped on its own). The subtitle wraps
+   within the capped width rather than forcing the row to break. */
+.mk-setup-toggles .mk-sharp-toggle { align-self: stretch; }
+
 /* Buttons — match the lobby (#mk-waiting-room) pill treatment */
 #mk-home .mk-btn {
   font-family: 'Fredoka', sans-serif; font-weight: 600;

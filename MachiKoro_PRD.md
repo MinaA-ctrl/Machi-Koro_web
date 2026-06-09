@@ -56,6 +56,7 @@ A staged build on top of the validated MVP:
 - Localization infrastructure (i18next) with English + Russian at launch
 
 **Should Have**
+- **Variable supply ("10-card market")** — only 10 establishment types are face-up at a time; when a type sells out, draw from a shuffled deck until 10 distinct types show again, so the market shifts each game (the expansions' recommended variant). A **free gameplay toggle** for the host (a mode, not paid content); most impactful with Harbour/Sharp, so it softly pulls toward the paid versions. Engine logic in Stage 1 (seedable RNG); market UI in Stage 3.
 - AI opponent (Easy / Medium / Hard) + tactics advisor mode
 - Mobile apps (iOS + Android) via React Native / Expo
 - Cosmetics shop with earned currency (Koro Coins): avatars, backgrounds, card backs
@@ -87,6 +88,7 @@ A staged build on top of the validated MVP:
 **Stage 1 — Engine**
 - As the developer, I have a headless, tested engine module so every later stage just wires to it.
 - As a host, I can choose Basic / Harbour / Sharp at table creation and the engine applies the right rules.
+- As a host, I can enable a variable **"10-card" supply** so only 10 establishment types are available at once and the market shifts as types sell out (engine logic here in Stage 1; the stack-market UI in Stage 3).
 
 **Stage 2/3 — Backend + Web**
 - As a player, I can register, log in, or play as a guest.

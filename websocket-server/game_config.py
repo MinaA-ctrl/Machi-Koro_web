@@ -38,6 +38,10 @@ class GameConfig:
     # fully identified by (base, sharp); this flag is the persisted seam Phase D
     # stores alongside game_version. Plain Basic/Harbour leave it False.
     sharp: bool = False
+    # Variable Supply (Phase E): only 10 distinct establishment types are face-up
+    # at once; selling one out reveals the next from a shuffled deck. Defaults on
+    # when Sharp is active (where the larger pool clutters the board), off otherwise.
+    variable_supply: bool = False
 
     def __post_init__(self):
         # Fail fast on a malformed config rather than mid-game.
@@ -94,21 +98,29 @@ HARBOUR_GAME = GameConfig(
 # Row cards onto either base. build_config(base, sharp) is the composition seam —
 # Phases B/C add more cards to SHARP_TIER1_IDS, Phase D persists (game_version, sharp).
 
-def build_config(base, sharp=False):
+def build_config(base, sharp=False, variable_supply=None):
     """Compose a GameConfig = `base` (Basic/Harbour) + optional Sharp add-on.
 
     Sharp appends the Sharp establishment pool to the base's supply and sets the
     `sharp` flag; landmarks, starting hand, and starting coins are the base's
-    (Sharp adds no landmarks). With sharp=False the base is returned unchanged, so
-    plain Basic/Harbour keep their identity.
+    (Sharp adds no landmarks).
+
+    `variable_supply` defaults on when sharp=True, off otherwise; pass it
+    explicitly to override (e.g. variable_supply=False on a Sharp config, or
+    =True on a plain base). With sharp=False and no variable-supply override, the
+    base is returned unchanged so plain Basic/Harbour keep their identity.
     """
+    vs = sharp if variable_supply is None else bool(variable_supply)
     if not sharp:
-        return base
+        if not vs:
+            return base                      # unchanged singleton (default-off base)
+        return replace(base, variable_supply=True)
     return replace(
         base,
         name=f"{base.name} + Sharp",
         establishment_ids=base.establishment_ids + SHARP_CARD_IDS,
         sharp=True,
+        variable_supply=vs,
     )
 
 
@@ -120,6 +132,13 @@ HARBOUR_SHARP_GAME = build_config(HARBOUR_GAME, sharp=True)   # "Harbour + Sharp
 _SHARP_BY_BASE_NAME = {
     BASE_GAME.name.lower():    BASE_SHARP_GAME,
     HARBOUR_GAME.name.lower(): HARBOUR_SHARP_GAME,
+}
+
+# Reverse: a composed Sharp singleton's name → its plain base. Lets config_for
+# recover the base when a composed name ("Harbour + Sharp") is passed in.
+_BASE_OF_SHARP = {
+    BASE_SHARP_GAME.name.lower():    BASE_GAME,
+    HARBOUR_SHARP_GAME.name.lower(): HARBOUR_GAME,
 }
 
 
@@ -157,16 +176,24 @@ def config_for_version(version):
     return HARBOUR_GAME
 
 
-def config_for(base, sharp=False):
-    """Resolve a (base, sharp) pair to its composed GameConfig.
+def config_for(base, sharp=False, variable_supply=None):
+    """Resolve (base, sharp, variable_supply) to a GameConfig.
 
-    This is the seam Phase D uses once the `sharp` flag is persisted: it stores
-    (game_version, sharp) and calls config_for(game_version, sharp). `base` may be
-    a version key ('basic'/'harbour') or a config name; it's normalized through
-    config_for_version, then the Sharp sibling is selected when sharp=True.
-    Returns the canonical singletons, so round-trips compare equal by identity.
+    The seam main.py persists against: it stores (game_version, sharp,
+    variable_supply) and resolves here. The three are independent — `base` is a
+    version key/name ('basic'/'harbour' or 'Basic'/'Harbour'); `sharp` layers the
+    add-on; `variable_supply` is the supply mode.
+
+    `variable_supply=None` keeps build_config's default (on for Sharp, off
+    otherwise); pass True/False to override it explicitly (the host's choice).
+    Canonical (base, sharp) combos in their default supply mode return the shared
+    singletons, so existing round-trips still compare equal by identity.
     """
     base_cfg = config_for_version(base)
-    if not sharp or base_cfg.sharp:
-        return base_cfg
-    return _SHARP_BY_BASE_NAME.get(base_cfg.name.lower(), base_cfg)
+    if base_cfg.sharp:                       # a composed name resolved — recover its base
+        base_cfg = _BASE_OF_SHARP.get(base_cfg.name.lower(), base_cfg)
+    canonical = (_SHARP_BY_BASE_NAME.get(base_cfg.name.lower(), base_cfg)
+                 if sharp else base_cfg)
+    if variable_supply is None or bool(variable_supply) == canonical.variable_supply:
+        return canonical
+    return build_config(base_cfg, sharp=bool(sharp), variable_supply=bool(variable_supply))

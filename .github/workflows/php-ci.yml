@@ -117,3 +117,20 @@ jobs:
           wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'sharp'" --path=wp \
             | grep -q sharp
           echo "migration: sharp restored on existing table"
+
+      - name: Fresh install has variable_supply
+        run: |
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'variable_supply'" --path=wp \
+            | grep -q variable_supply
+          echo "fresh install: variable_supply present"
+
+      - name: Migration restores variable_supply on a pre-existing table
+        # Same negative-proof as sharp: drop the column, clear the schema-version
+        # flag, run the explicit migration, and assert variable_supply is back.
+        run: |
+          wp db query "ALTER TABLE wp_mk_tables DROP COLUMN variable_supply" --path=wp
+          wp option delete mk_db_version --path=wp
+          wp eval 'mk_migrate();' --path=wp
+          wp db query "SHOW COLUMNS FROM wp_mk_tables LIKE 'variable_supply'" --path=wp \
+            | grep -q variable_supply
+          echo "migration: variable_supply restored on existing table"

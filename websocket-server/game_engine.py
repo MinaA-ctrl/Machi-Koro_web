@@ -58,16 +58,32 @@ def create_initial_state(players_info, config=HARBOUR_GAME):
             ],
         })
 
-    # Supply: 6 per regular card, num_players per purple card — only the cards
-    # this version includes.
-    supply = {}
-    for card_id in config.establishment_ids:
-        card = CARD_DEFS[card_id]
-        supply[card_id] = num_players if card['type'] == 'Purple Major' else 6
+    # Copies per type (both modes): num_players for a Purple Major, else 6.
+    def _copies(card_id):
+        return num_players if CARD_DEFS[card_id]['type'] == 'Purple Major' else 6
+
+    deck = None
+    if config.variable_supply:
+        # Variable Supply (Phase E): shuffle every copy face-down, then deal until
+        # 10 DISTINCT types are face-up (duplicates stack onto a type's count). The
+        # shuffle goes through the seedable _rng, so a seeded test is deterministic.
+        deck = []
+        for card_id in config.establishment_ids:
+            deck += [card_id] * _copies(card_id)
+        _rng.shuffle(deck)
+        supply = {}
+        _draw_to_market(deck, supply)
+        market = [CARD_DEFS[cid] for cid in supply]
+    else:
+        # Classic supply: every type face-up at full count (byte-identical to pre-E).
+        supply = {}
+        for card_id in config.establishment_ids:
+            supply[card_id] = _copies(card_id)
+        market = [CARD_DEFS[cid] for cid in config.establishment_ids]
 
     start_seat = min(p['seat'] for p in players)
 
-    return {
+    state = {
         'phase':          'roll',
         'version':        config.name,
         'active_seat':    start_seat,
@@ -84,13 +100,19 @@ def create_initial_state(players_info, config=HARBOUR_GAME):
         'interactive_active_copies': {},
         'pending_prompt': None,
         'players':        players,
-        'market':         [CARD_DEFS[cid] for cid in config.establishment_ids],
+        'market':         market,
         'supply':         supply,
         'card_defs':      CARD_DEFS,
         'winner':         None,
         'game_seq':       0,
         'log':            [],
     }
+    # Variable Supply only: carry the face-down draw pile in state (persists via
+    # save/load). Its presence is the runtime signal that VS is active — classic
+    # games never get this key, keeping their state byte-identical to pre-E.
+    if deck is not None:
+        state['deck'] = deck
+    return state
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -133,6 +155,19 @@ def add_log(state, msg):
 def opponents(state):
     active = state['active_seat']
     return [p for p in state['players'] if p['seat'] != active]
+
+
+# ── Variable Supply (Phase E) ────────────────────────────────────────────────
+# Used for both initial deal and post-sell-off refill: draw from the top of the
+# deck (its end) until 10 distinct types are face-up, or the deck empties. A drawn
+# duplicate stacks onto its type's count and does NOT count toward the 10, so the
+# loop keeps going until a 10th new type appears. Deck exhaustion → fewer than 10
+# visible, which is fine (late game).
+
+def _draw_to_market(deck, supply):
+    while len(supply) < 10 and deck:
+        cid = deck.pop()
+        supply[cid] = supply.get(cid, 0) + 1
 
 
 # ── Renovation (Sharp Phase B) ───────────────────────────────────────────────
@@ -766,6 +801,13 @@ def handle_action(state, seat, msg):
                 # Sharp C1: build-time payout — take 5 from the bank immediately.
                 give_coins(active, 5)
                 add_log(state, f"{active['name']} gets 5🪙 (Loan Office, on build)")
+            # Variable Supply (Phase E): a sold-out stack (count → 0) leaves the
+            # board and is replaced by the next type(s) drawn from the deck. Classic
+            # games keep the key at 0 (no 'deck'), so this is a no-op there.
+            if 'deck' in state and state['supply'].get(item_id, 0) == 0:
+                state['supply'].pop(item_id, None)
+                _draw_to_market(state['deck'], state['supply'])
+                state['market'] = [CARD_DEFS[c] for c in state['supply']]
 
         elif build_type == 'landmark':
             lm = next((l for l in active['landmarks'] if l['id'] == item_id), None)

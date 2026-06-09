@@ -12,6 +12,7 @@ function mk_install() {
         name VARCHAR(80) NOT NULL,
         game_version VARCHAR(16) NOT NULL DEFAULT 'harbour',
         sharp TINYINT(1) NOT NULL DEFAULT 0,
+        variable_supply TINYINT(1) NOT NULL DEFAULT 0,
         host_id VARCHAR(64) NOT NULL,
         password_hash VARCHAR(255) DEFAULT NULL,
         is_public TINYINT(1) DEFAULT 1,
@@ -91,6 +92,19 @@ function mk_migrate() {
     if (!$has_sharp) {
         $wpdb->query("ALTER TABLE {$tables}
             ADD COLUMN sharp TINYINT(1) NOT NULL DEFAULT 0 AFTER game_version");
+    }
+
+    // Variable Supply: host-toggleable supply mode (10 face-up types), independent
+    // of the sharp flag. Same guarded-ALTER pattern; DEFAULT 0 backfills existing
+    // tables to the classic full supply, preserving their behavior.
+    $has_variable_supply = $wpdb->get_var($wpdb->prepare(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = 'variable_supply'",
+        DB_NAME, $tables
+    ));
+    if (!$has_variable_supply) {
+        $wpdb->query("ALTER TABLE {$tables}
+            ADD COLUMN variable_supply TINYINT(1) NOT NULL DEFAULT 0 AFTER sharp");
     }
 }
 

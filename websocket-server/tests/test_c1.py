@@ -14,7 +14,7 @@ import pytest
 from game_engine import (
     create_initial_state, resolve_cards, handle_action, advance_turn, card_count,
 )
-from game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME
+from game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME, BASE_GAME, build_config
 
 
 def P(state, seat):
@@ -45,7 +45,9 @@ def build_landmark(player, lm_id):
 
 class TestLoanOffice:
     def test_build_pays_5_from_bank(self):
-        s = make(BASE_SHARP_GAME)
+        # Pin Variable Supply off so loan_office is reliably face-up (buildable);
+        # this test is about the build-time payout, not which 10 types are visible.
+        s = make(build_config(BASE_GAME, sharp=True, variable_supply=False))
         a = P(s, 0)
         a["coins"] = 3
         s["phase"] = "build"

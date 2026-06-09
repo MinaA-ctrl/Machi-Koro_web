@@ -56,20 +56,34 @@ add_shortcode('mk_home', function () {
             <?php if (!is_user_logged_in()): ?>
             <input id="mk-guest-name" type="text" placeholder="Your name" maxlength="64" />
             <?php endif; ?>
-            <div id="mk-version-select" class="mk-version-select" role="radiogroup" aria-label="Game version">
-                <span class="mk-version-title">Game version</span>
-                <div class="mk-version-opts">
-                    <button type="button" class="mk-version-opt" data-version="basic" role="radio" aria-checked="false">🏙️ Basic</button>
-                    <button type="button" class="mk-version-opt is-active" data-version="harbour" role="radio" aria-checked="true">⚓ Harbour</button>
+            <!-- Game setup: the base version picker plus the two independent host
+                 toggles (Sharp, 10-card), grouped so they read as one cluster. -->
+            <div class="mk-setup">
+                <span class="mk-setup-title">Game setup</span>
+                <div class="mk-setup-row">
+                    <div id="mk-version-select" class="mk-version-select" role="radiogroup" aria-label="Game version">
+                        <div class="mk-version-opts">
+                            <button type="button" class="mk-version-opt" data-version="basic" role="radio" aria-checked="false">🏙️ Basic</button>
+                            <button type="button" class="mk-version-opt is-active" data-version="harbour" role="radio" aria-checked="true">⚓ Harbour</button>
+                        </div>
+                    </div>
+                    <div class="mk-setup-toggles">
+                        <!-- Sharp (Millionaire's Row): a composable add-on, not a third
+                             version — layers onto whichever base is selected. Default off. -->
+                        <label id="mk-sharp-toggle" class="mk-sharp-toggle">
+                            <input type="checkbox" id="mk-sharp-check" />
+                            <span class="mk-sharp-box" aria-hidden="true"></span>
+                            <span class="mk-sharp-text">+ Sharp <small>Millionaire's Row add-on</small></span>
+                        </label>
+                        <!-- Variable Supply: independent of Sharp; works for any version. Default off. -->
+                        <label id="mk-vs-toggle" class="mk-sharp-toggle">
+                            <input type="checkbox" id="mk-vs-check" />
+                            <span class="mk-sharp-box" aria-hidden="true"></span>
+                            <span class="mk-sharp-text">🎴 10-card market <small>only 10 types available; shifts as they sell out</small></span>
+                        </label>
+                    </div>
                 </div>
             </div>
-            <!-- Sharp (Millionaire's Row) is a composable add-on, not a third version —
-                 it layers onto whichever base is selected above. Default off. -->
-            <label id="mk-sharp-toggle" class="mk-sharp-toggle">
-                <input type="checkbox" id="mk-sharp-check" />
-                <span class="mk-sharp-box" aria-hidden="true"></span>
-                <span class="mk-sharp-text">+ Sharp <small>Millionaire's Row add-on</small></span>
-            </label>
             <input id="mk-table-password" type="password" placeholder="Password (optional)" maxlength="64" autocomplete="new-password" />
             <div class="mk-create-btns">
                 <button id="mk-btn-create-public"  class="mk-btn mk-btn-primary">Create Public</button>

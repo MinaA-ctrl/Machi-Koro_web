@@ -45,7 +45,8 @@ function mk_api_list_tables($req) {
     $like = '%' . $wpdb->esc_like($search) . '%';
 
     $rows = $wpdb->get_results($wpdb->prepare(
-        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.is_public, t.status,
+        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.variable_supply,
+                t.is_public, t.status,
                 (t.password_hash IS NOT NULL) AS is_protected,
                 COUNT(p.id) AS player_count
          FROM {$wpdb->prefix}mk_tables t
@@ -59,9 +60,10 @@ function mk_api_list_tables($req) {
 
     // Cast so JSON carries a real boolean — the string "0" would be truthy in JS.
     foreach ($rows as $r) {
-        $r->is_protected = (bool) $r->is_protected;
-        $r->sharp        = (bool) $r->sharp;
-        $r->player_count = (int) $r->player_count;
+        $r->is_protected    = (bool) $r->is_protected;
+        $r->sharp           = (bool) $r->sharp;
+        $r->variable_supply = (bool) $r->variable_supply;
+        $r->player_count    = (int) $r->player_count;
     }
 
     return rest_ensure_response($rows);
@@ -101,15 +103,20 @@ function mk_api_create_table($req) {
     // rest_sanitize_boolean handles real bools and "true"/"false"/"1"/"0" strings.
     $sharp = rest_sanitize_boolean($req->get_param('sharp') ?? false);
 
+    // Variable Supply: host-toggleable supply mode, boolean, default false.
+    // Fully independent of sharp — available for any version.
+    $variable_supply = rest_sanitize_boolean($req->get_param('variable_supply') ?? false);
+
     $code = mk_generate_code();
 
     $data = [
-        'code'         => $code,
-        'name'         => $name,
-        'game_version' => $version,
-        'sharp'        => $sharp ? 1 : 0,
-        'host_id'      => $host_id,
-        'is_public'    => $public ? 1 : 0,
+        'code'            => $code,
+        'name'            => $name,
+        'game_version'    => $version,
+        'sharp'           => $sharp ? 1 : 0,
+        'variable_supply' => $variable_supply ? 1 : 0,
+        'host_id'         => $host_id,
+        'is_public'       => $public ? 1 : 0,
     ];
     // Optional password protection (TASK-006): store a salted hash only when a
     // non-empty password is supplied. Never store the plaintext.
@@ -136,14 +143,16 @@ function mk_api_get_table($req) {
     // WEB-001: never SELECT t.* here — that leaked password_hash and host_id to a
     // public endpoint. Expose only safe columns + the derived is_protected flag.
     $row = $wpdb->get_row($wpdb->prepare(
-        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.is_public, t.status, t.created_at,
+        "SELECT t.id, t.code, t.name, t.game_version, t.sharp, t.variable_supply,
+                t.is_public, t.status, t.created_at,
                 (t.password_hash IS NOT NULL) AS is_protected
          FROM {$wpdb->prefix}mk_tables t WHERE t.code = %s",
         $code
     ));
     if (!$row) return mk_err('not_found', 'Table not found', 404);
-    $row->is_protected = (bool) $row->is_protected;
-    $row->sharp        = (bool) $row->sharp;
+    $row->is_protected    = (bool) $row->is_protected;
+    $row->sharp           = (bool) $row->sharp;
+    $row->variable_supply = (bool) $row->variable_supply;
 
     $players = $wpdb->get_results($wpdb->prepare(
         "SELECT p.id, p.seat, p.is_host, p.user_id, p.guest_name,

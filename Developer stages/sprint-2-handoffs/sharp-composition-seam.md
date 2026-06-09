@@ -1,14 +1,14 @@
 # Sharp Composition Seam — contract for Phases B/C/D
 
-> **Status (2026-06-06): Phases A–C2 SHIPPED — all 13 Sharp cards exist (engine/
-> config only).** Stage 1, slice 2, branch `Stage-1_add_base`. No DB, no UI.
-> **160 tests green** (`cd websocket-server && python3 -m pytest -q`).
+> **Status (2026-06-08): Phases A–C2 + D-BE + E SHIPPED (engine/config/storage).**
+> Stage 1, slice 2, branch `Stage-1_add_base`. **178 tests green**
+> (`cd websocket-server && python3 -m pytest -q`).
 > A: composition + 6 Tier-1. B: Renovation + Winery & Cleaning Company. C1: Loan
-> Office, Park, Tech Startup. C2: Demolition & Moving Company (see "Phase C2").
-> The Sharp pool is **complete at 13 cards**. **Phase D-BE (storage + wiring) is
-> also done** (DB `sharp` column + REST + config wiring; php-ci green incl. the new
-> column assertion — see "Phase D-BE" below). Remaining: **D-WEB** (frontend toggle
-> + interactive prompt UIs + browser QA) and **Phase E** (Variable Supply).
+> Office, Park, Tech Startup. C2: Demolition & Moving Company. D-BE: DB `sharp`
+> column + REST + config wiring (php-ci green). **E: Variable Supply** (10 face-up
+> types, seedable deck — see "Phase E" below).
+> The Sharp pool is **complete at 13 cards**. Remaining: **D-WEB** (frontend toggle
+> + interactive prompt UIs + browser QA) — the only Sharp work left.
 
 Sharp (Millionaire's Row) is a **composable add-on, not a third version**: a
 `+ Sharp` flag that layers the MR cards onto either base. This note is the seam
@@ -60,23 +60,46 @@ The `sharp` flag is now persisted and wired through (engine unchanged). CI-prove
   pattern as `game_version`; `MK_DB_VERSION` bumped 2 → 3 so live installs migrate
   without reactivation). DEFAULT 0 backfills pre-D tables to "no Sharp".
 - **Wiring:** `main.py` table-start uses `config_for(table.game_version,
-  table.sharp)`. Rematch stays on `config_for_version(state['version'])` — composed
-  names ("Harbour + Sharp") already round-trip (Phase A), confirmed for both paths.
+  table.sharp, table.variable_supply)` (see VS section). Rematch now also reads the
+  table row and resolves the same way (it used to rebuild from `state['version']`).
 - **CI:** php-ci's migration job now also asserts `sharp` on a fresh install and
   after drop + `mk_migrate()` (same negative-proof as `game_version`).
 
+### Variable Supply — storage + wiring ✅ DONE (2026-06-08)
+`variable_supply` is now a **host-toggleable** flag, **fully independent of
+`sharp`**, default off, available for any version. CI-proven (php-ci green incl.
+the new column assertion). Mirrors D-BE exactly:
+- **DB:** `variable_supply TINYINT(1) NOT NULL DEFAULT 0` on `wp_mk_tables`, in
+  `mk_install`'s `CREATE TABLE` **and** a guarded `mk_migrate()` ALTER (`AFTER sharp`).
+  `MK_DB_VERSION` bumped 3 → 4. DEFAULT 0 backfills existing tables to classic supply.
+- **Config:** `config_for(base, sharp=False, variable_supply=None)` — `None` keeps
+  build_config's default (on for Sharp, off otherwise); an explicit `True`/`False`
+  is the host's override, decoupled from Sharp. Canonical (base, sharp) combos in
+  their default supply mode still return the shared singletons (identity preserved).
+- **Wiring:** table-start passes `config_for(game_version, sharp, variable_supply)`.
+  **Rematch** (`new_game`) now reads the table row's `(game_version, sharp,
+  variable_supply)` via `_table_config(code)` and resolves the same way — so **all
+  three flags survive a rematch** (previously VS would silently drop, since
+  `state['version']` doesn't encode it). Falls back to `config_for_version(
+  state['version'])` only if the row read fails.
+- **CI:** php-ci asserts `variable_supply` on fresh install and after drop +
+  `mk_migrate()` (same negative-proof).
+
 ### API contract for D-WEB (frontend)
-- **Create table** `POST /machi-koro/v1/tables` accepts a **`sharp`** field —
-  boolean, **optional, default `false`** (parsed with `rest_sanitize_boolean`, so
-  real bools and `"true"`/`"false"`/`"1"`/`"0"` all work). Sits alongside the
-  existing `version` (`'basic'`|`'harbour'`) field. The pair (version, sharp) picks
-  the composed config.
-- **`GET /tables`** and **`GET /tables/{code}`** now return **`sharp`** (real JSON
-  boolean) alongside `game_version`. Render the label as `"<Version> + Sharp"` when
-  `sharp` is true (engine's config name is e.g. `"Harbour + Sharp"`).
-- Still TODO in D-WEB: the create-table toggle UI + the interactive prompt UIs for
-  every Sharp interactive card (TV Station / Business Center / Cleaning / Demolition
-  / Moving picks + the Tech Startup invest button) + real-browser QA.
+- **Create table** `POST /machi-koro/v1/tables` accepts two independent boolean
+  fields, both **optional, default `false`** (parsed with `rest_sanitize_boolean`):
+  - **`sharp`** — layer the Millionaire's Row add-on. With `version` (`'basic'`|
+    `'harbour'`), the pair picks the composed config.
+  - **`variable_supply`** — host-toggle the 10-face-up supply mode. **Independent of
+    `sharp`** — valid for any version (Basic / Harbour / +Sharp).
+- **`GET /tables`** and **`GET /tables/{code}`** now return **`sharp`** and
+  **`variable_supply`** (real JSON booleans) alongside `game_version`. Render the
+  Sharp label as `"<Version> + Sharp"` when `sharp` is true; show a Variable-Supply
+  badge when `variable_supply` is true.
+- Still TODO in D-WEB: the create-table toggles (Sharp + Variable Supply) + the
+  interactive prompt UIs for every Sharp interactive card (TV Station / Business
+  Center / Cleaning / Demolition / Moving picks + the Tech Startup invest button) +
+  real-browser QA.
 
 ## Tier-1 cards (`card_defs.py` + `game_engine.resolve_cards`)
 
@@ -236,9 +259,60 @@ why a card closed for renovation correctly fires 0 times on its first matching r
 resumes the chain past itself. Multi-pick cards (Demolition, Moving) track
 `remaining` in `pending_prompt` and re-prompt via `_resume_demolition`/`_resume_moving`.
 
-## Out of scope — only Phase D + E remain
-No DB column yet (**Phase D**: add a `sharp` column via guarded `mk_migrate` + bump
-`MK_DB_VERSION`, switch `main.py` to `config_for(game_version, sharp)`, build the
-frontend prompts for every interactive card — TV/Business Center/Cleaning/Demolition/
-Moving picks + the Tech Startup invest button — and do real-browser QA). Variable
-Supply is **Phase E** (deferred to the Stage 1 capstone). See `sharp-plan.md`.
+## Phase E — Variable Supply (10 face-up types)
+
+A free gameplay mode: instead of every establishment type being buyable, only **10
+distinct types** are face-up; selling one out reveals the next from a shuffled deck.
+
+### Flag
+`GameConfig.variable_supply: bool = False`. `build_config(base, sharp, variable_supply=None)`
+**defaults it on when `sharp=True`**, off otherwise; pass `variable_supply=` to
+override either way (e.g. a classic-supply Sharp config for tests). So the
+`*_SHARP_GAME` singletons carry `variable_supply=True`.
+**Now host-toggleable & persisted** (2026-06-08): it's a DB column + REST field,
+resolved through `config_for(base, sharp, variable_supply)` at table-start and
+rematch — a free, independent host option for any version. See "Variable Supply —
+storage + wiring" above for the DB/REST/wiring contract. (Toggle UI is Stage 3.)
+
+### State model (only when `variable_supply` is on)
+- **`state['deck']`** — a list of `card_id` strings, **one entry per copy**, the
+  face-down draw pile (JSON-serializable; persists via save/load). **Its presence
+  is the runtime signal that VS is active** — classic games never get this key, so
+  their state stays byte-identical to pre-E.
+- **`state['supply']`** — `{card_id: count}` for the **visible stacks only** (≤ 10
+  keys; `count` = face-up copies).
+- **`state['market']`** — `[CARD_DEFS[c] for c in state['supply']]`, derived, so the
+  current UI renders unchanged (it just shows ≤ 10).
+- Copies per type are the same rule as classic: `num_players` for a Purple Major,
+  else 6. All randomness is the deck shuffle through the seedable `_rng`.
+
+### The draw rule (setup == refill): `_draw_to_market(deck, supply)`
+`while len(supply) < 10 and deck: cid = deck.pop(); supply[cid] = supply.get(cid,0)+1`.
+Draws from the **top = end** of the deck until **10 distinct** types are face-up. A
+drawn **duplicate stacks** onto its type's count and does **not** count toward the
+10, so the loop keeps going until a 10th new type appears (or the deck empties).
+- **Setup** (`create_initial_state`): build `[cid]*copies` for every type, `_rng.shuffle`,
+  then `_draw_to_market`.
+- **Buy** (build handler): only a **visible** type is buildable (`supply.get(id,0) <= 0`
+  already rejects hidden types). After decrement, if `'deck' in state` and the
+  stack hit 0, pop the key and `_draw_to_market` again, then rebuild `market`.
+  Purple `max_per_player` still enforced. Refill fires **only** when a stack hits 0,
+  not on every purchase.
+
+### Edge cases (all tested in `tests/test_variable_supply.py`)
+- **Deck exhausted** (setup or refill): stop with `< 10` visible — valid, no error.
+- **Duplicate drawn**: stacks the count, doesn't open a new slot.
+- **Type re-enters**: a sold-out type can be drawn again later → it re-opens. Allowed.
+- **Purple**: only `num_players` copies enter the deck; replaced like any type on sellout.
+- **Pool < 10 distinct**: deck empties before 10 → visible = all types. Fine.
+- **Determinism**: `seed(N)` + same buy order ⇒ identical market evolution.
+- **Default-off**: no `deck` key, full supply, all types in market — byte-identical
+  (the 160 prior tests stay green; only 3 Sharp tests were pinned to
+  `variable_supply=False` since they assert classic full supply, not VS).
+
+## Out of scope — only D-WEB remains
+**D-WEB** (frontend): the create-table Sharp toggle UI, the prompt UIs for every
+interactive Sharp card (TV / Business Center / Cleaning / Demolition / Moving picks
++ the Tech Startup invest button), the Variable-Supply host toggle (Stage 3), and
+real-browser QA. Engine/config/storage for Sharp + Variable Supply are complete.
+See `sharp-plan.md`.

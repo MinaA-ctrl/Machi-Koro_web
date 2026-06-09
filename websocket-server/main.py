@@ -264,11 +264,15 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
                              )}
                             for s in connected_seats
                         ]
-                        # A rematch keeps the table's version: derive the config
-                        # from the finished game's stored label.
-                        new_state = create_initial_state(
-                            players_info, config=config_for_version(state.get('version'))
-                        )
+                        # A rematch keeps ALL the table's options. Read them back
+                        # from the table row (game_version, sharp, variable_supply)
+                        # — state['version'] alone doesn't encode the supply mode, so
+                        # rebuilding from it would silently drop VS. Fall back to the
+                        # stored version name if the row can't be read.
+                        cfg = await _table_config(code)
+                        if cfg is None:
+                            cfg = config_for_version(state.get('version'))
+                        new_state = create_initial_state(players_info, config=cfg)
                         # Start with the lowest-numbered connected seat
                         new_state['active_seat'] = connected_seats[0]
                         # Bump the per-game discriminator so this rematch's scores
@@ -479,12 +483,36 @@ async def save_scores(code: str):
         print(f"[game] save_scores error for {code}: {e}")
 
 
+async def _table_config(code: str):
+    """Resolve a table's composed config from its persisted (game_version, sharp,
+    variable_supply). Used by the rematch path so all three flags survive a rematch
+    (state['version'] alone doesn't encode the supply mode). Returns None on
+    miss/error so the caller can fall back.
+    """
+    try:
+        conn = await db_connect()
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                "SELECT game_version, sharp, variable_supply FROM wp_mk_tables WHERE code=%s",
+                (code,)
+            )
+            t = await cur.fetchone()
+        conn.close()
+        if not t:
+            return None
+        return config_for(t.get('game_version'), t.get('sharp'), t.get('variable_supply'))
+    except Exception as e:
+        print(f"[game] table config read error for {code}: {e}")
+        return None
+
+
 async def _load_or_create_state(code: str):
     try:
         conn = await db_connect()
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
-                "SELECT id, game_version, sharp FROM wp_mk_tables WHERE code=%s AND status='playing'",
+                "SELECT id, game_version, sharp, variable_supply "
+                "FROM wp_mk_tables WHERE code=%s AND status='playing'",
                 (code,)
             )
             table = await cur.fetchone()
@@ -515,11 +543,14 @@ async def _load_or_create_state(code: str):
             if not players:
                 return None
 
-            # Build the right composed config from the table's (game_version, sharp)
-            # (D-BE). config_for normalizes the base and layers Sharp when the flag
-            # is set; unknown/missing base → Harbour, falsy sharp → no add-on.
+            # Build the composed config from the table's (game_version, sharp,
+            # variable_supply) — three independent host choices. config_for
+            # normalizes the base, layers Sharp when set, and applies the host's
+            # explicit supply mode; unknown/missing base → Harbour.
             state = create_initial_state(
-                players, config=config_for(table.get('game_version'), table.get('sharp'))
+                players,
+                config=config_for(table.get('game_version'), table.get('sharp'),
+                                  table.get('variable_supply')),
             )
 
             # ON DUPLICATE KEY UPDATE: if another process/connection inserted the

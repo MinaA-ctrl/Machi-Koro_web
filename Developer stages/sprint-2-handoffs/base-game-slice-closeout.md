@@ -1,14 +1,14 @@
 # Stage 1 · Slice 1 (Base Game) — Close-Out Memo
 
-> **Status (2026-06-05): REOPENED — P0 found in real browser (WEB-002).** Engine/protocol layers verified, but the actual browser client was never loaded until the owner tried it. First slice of Stage 1, scoped down per the owner's "go slower, Base game first" call. The live Harbour MVP was never disturbed (additive; Harbour stays the default).
+> **Status: CLOSED (2026-06-07).** WEB-002 resolved — host + joiner both connect and play in a real browser. First slice of Stage 1, scoped down per the owner's "go slower, Base game first" call. The live Harbour MVP was never disturbed (additive; Harbour stays the default). Stage-1 engine AC met: 160 tests, 88% coverage.
 
-## 🔴 WEB-002 (P0) — game unplayable in a real browser
+## ✅ WEB-002 (P0) — RESOLVED (was: game unplayable in a real browser)
 **Symptom:** blank board (no cards), "can't connect to the table."
 **Root cause:** the `/ws/{code}/game/{seat}` endpoint requires the per-seat HMAC token (Stage-0 WS-auth), but `app.js` never captured or sent it — `connectWS()` built the URL with no `?token=`, so the server closed every game socket with **4401**. No socket → no state broadcast → no cards. (`/lobby/` has no token gate, so the waiting room worked — matching the symptom.)
 **Why it escaped:** (1) Stage-0 owner live-smokes (SMOKE-1, real browser) were never run; (2) B6's QA used a protocol **bot that sends the token itself**, so it structurally couldn't catch a missing-token bug in the real client; (3) PM under-weighted the "badge not eyeballed in a browser" residual — that *was* the unverified client layer.
 **Fix:** `app.js` now persists `mk_token` and appends `?token=` to the game socket URL. Two token sources, because the **host and joiner are minted tokens at different moments**: the **joiner** gets theirs from the join response (`goWaiting`); the **host** gets theirs from the `/start` response (`mk_api_start_game`, seat 0) — `POST /tables` returns no token. The first fix only covered the joiner; the host needed the `/start` handler to store `res.token` too. Token TTL is 6h (covers a session). **No docker rebuild needed** — `app.js` is bind-mounted; a browser hard-refresh picks it up.
 **Process lesson:** a protocol bot ≠ a browser. Any client-touching slice needs one real-browser load before sign-off. (Consider: JS syntax/lint in CI; there is none today.)
-**Still needs:** owner confirmation in an actual browser before this slice can re-close.
+**Resolved (2026-06-07):** owner confirmed in a real browser — joiner first ("fixed for an opponent"), then the host after the `/start`-token fix ("Beautiful"). Both roles connect and play. The process lesson (a protocol bot ≠ a browser; client-touching slices need a real-browser load before sign-off) carried forward and was applied in Sharp's D-QA.
 
 ## ✅ Delivered & verified
 | Task | Result | Verified by |
