@@ -11,10 +11,10 @@ with the force_rolls fixture.
 """
 import pytest
 
-from game_engine import (
+from machi_koro_engine.game_engine import (
     create_initial_state, resolve_cards, handle_action, advance_turn, card_count,
 )
-from game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME, BASE_GAME, build_config
+from machi_koro_engine.game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME, BASE_GAME, build_config
 
 
 def P(state, seat):

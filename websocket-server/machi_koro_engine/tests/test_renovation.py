@@ -14,12 +14,12 @@ handle_action event (the Phase-D frontend will drive the same seam).
 import json
 import pytest
 
-from game_engine import (
+from machi_koro_engine.game_engine import (
     create_initial_state, resolve_cards, handle_action,
     _set_interactive_phase, _cleaning_targets,
     closed_copies, active_copies,
 )
-from game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME
+from machi_koro_engine.game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME
 
 
 def P(state, seat):

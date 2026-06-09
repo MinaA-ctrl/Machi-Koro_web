@@ -19,8 +19,8 @@ Coverage map (AC bullets from sprint-1-handoffs/qa.md):
   Deterministic rolls ..... TestDeterminism
   Build / supply rules .... TestBuild
 """
-import game_engine as ge
-from game_engine import create_initial_state, resolve_cards, handle_action, check_win
+import machi_koro_engine.game_engine as ge
+from machi_koro_engine.game_engine import create_initial_state, resolve_cards, handle_action, check_win
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

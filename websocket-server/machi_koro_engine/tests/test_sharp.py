@@ -16,13 +16,13 @@ directly, no dice. The existing 64-test suite continues to guard Basic/Harbour.
 """
 import pytest
 
-from game_engine import create_initial_state, resolve_cards, landmarks_built
-from game_config import (
+from machi_koro_engine.game_engine import create_initial_state, resolve_cards, landmarks_built
+from machi_koro_engine.game_config import (
     BASE_GAME, HARBOUR_GAME, BASE_SHARP_GAME, HARBOUR_SHARP_GAME,
     build_config, config_for, config_for_version,
     BASE_ESTABLISHMENTS, HARBOUR_ESTABLISHMENTS,
 )
-from card_defs import SHARP_TIER1_IDS, SHARP_CARD_IDS
+from machi_koro_engine.card_defs import SHARP_TIER1_IDS, SHARP_CARD_IDS
 
 
 def P(state, seat):

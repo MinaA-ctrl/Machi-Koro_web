@@ -14,6 +14,25 @@ services:
     networks:
       - machikoro_net
 
+  # Stage 2 (S2.2): Postgres for the new FastAPI backend's persistence layer.
+  # DEV/parallel only — DORMANT: no service connects to it yet (the live MVP runs
+  # on `db` above). Wired in at the S2.6/S2.7 cutover. Port 5433 on the host to
+  # avoid clashing with a local Postgres.
+  postgres:
+    image: postgres:16
+    container_name: machikoro_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-machikoro}
+      POSTGRES_USER: ${POSTGRES_USER:-machikoro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-machikoro}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - machikoro_net
+
   wordpress:
     image: wordpress:latest
     container_name: machikoro_wordpress
@@ -66,6 +85,7 @@ services:
 volumes:
   db_data:
   wp_data:
+  pg_data:   # Stage 2 (S2.2) Postgres — dormant until cutover
 
 networks:
   machikoro_net:

@@ -7,8 +7,10 @@ import os
 import time
 import aiomysql
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from game_engine import create_initial_state, handle_action, calculate_scores
-from game_config import config_for_version, config_for
+from machi_koro_engine import (
+    create_initial_state, handle_action, calculate_scores,
+    config_for_version, config_for,
+)
 
 # Shared HMAC secret for verifying game WS tokens (must match the WordPress service)
 MK_WS_SECRET = os.getenv('MK_WS_SECRET', '')

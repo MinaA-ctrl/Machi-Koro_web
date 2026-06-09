@@ -11,11 +11,11 @@ force_rolls. After this, all 13 Sharp cards exist.
 """
 import pytest
 
-from game_engine import (
+from machi_koro_engine.game_engine import (
     create_initial_state, resolve_cards, handle_action, _set_interactive_phase,
     check_win, card_count, has_landmark, closed_copies,
 )
-from game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME
+from machi_koro_engine.game_config import BASE_SHARP_GAME, HARBOUR_SHARP_GAME
 
 
 def P(state, seat):

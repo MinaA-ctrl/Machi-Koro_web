@@ -11,11 +11,11 @@ from collections import Counter
 
 import pytest
 
-from game_engine import create_initial_state, handle_action, seed, _draw_to_market
-from game_config import (
+from machi_koro_engine.game_engine import create_initial_state, handle_action, seed, _draw_to_market
+from machi_koro_engine.game_config import (
     build_config, config_for, BASE_GAME, HARBOUR_GAME, BASE_SHARP_GAME, HARBOUR_SHARP_GAME,
 )
-from card_defs import CARD_DEFS
+from machi_koro_engine.card_defs import CARD_DEFS
 
 
 def info(n=2):

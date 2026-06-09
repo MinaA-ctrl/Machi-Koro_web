@@ -12,7 +12,7 @@ determinism tests; `force_rolls` is preferred elsewhere because it lets a test
 pin an *exact* face rather than reverse-engineering a seed.
 """
 import pytest
-import game_engine as ge
+import machi_koro_engine.game_engine as ge
 
 
 @pytest.fixture

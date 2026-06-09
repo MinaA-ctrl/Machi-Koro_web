@@ -19,7 +19,7 @@ Sharp (= Millionaire's Row) is a later slice; see
 """
 
 from dataclasses import dataclass, field, replace
-from card_defs import CARD_DEFS, LANDMARK_DEFS, SHARP_CARD_IDS
+from .card_defs import CARD_DEFS, LANDMARK_DEFS, SHARP_CARD_IDS
 
 
 @dataclass(frozen=True)

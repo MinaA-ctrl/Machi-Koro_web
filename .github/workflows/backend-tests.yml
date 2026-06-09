@@ -1,0 +1,71 @@
+name: backend-tests
+
+# Stage 2 (S2.2) — the Postgres persistence layer. Boots a Postgres service,
+# applies the Alembic migrations on a fresh DB, then runs the persistence suite
+# (round-trip / restart-survival / scores rematch-safety). Parallel build: does NOT
+# touch the live MySQL path.
+
+on:
+  push:
+    paths:
+      - "websocket-server/persistence/**"
+      - "websocket-server/app/**"
+      - "websocket-server/requirements-backend.txt"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "websocket-server/persistence/**"
+      - "websocket-server/app/**"
+      - "websocket-server/requirements-backend.txt"
+      - ".github/workflows/backend-tests.yml"
+
+jobs:
+  persistence:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: machikoro
+          POSTGRES_USER: machikoro
+          POSTGRES_PASSWORD: machikoro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U machikoro"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: machikoro
+      DB_USER: machikoro
+      DB_PASSWORD: machikoro
+      MK_WS_SECRET: ci-test-secret   # so the per-seat token can be minted/verified
+      MK_JWT_SECRET: ci-test-jwt-secret   # signs JWTs in tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend deps
+        working-directory: websocket-server/persistence
+        run: pip install -r ../requirements-backend.txt
+
+      - name: Apply Alembic migrations on a fresh Postgres
+        working-directory: websocket-server/persistence
+        run: alembic upgrade head
+
+      - name: Run persistence suite
+        working-directory: websocket-server/persistence
+        run: python -m pytest
+
+      - name: Run app/API suite
+        working-directory: websocket-server/app
+        run: python -m pytest

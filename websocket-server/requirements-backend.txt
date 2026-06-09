@@ -1,0 +1,19 @@
+# Stage-2 backend deps (S2.2 persistence + S2.3 REST API).
+# Kept separate from requirements.txt so the live ws image stays lean and unchanged
+# while this layer is dormant; folded into the main image at the S2.6/S2.7 cutover.
+SQLAlchemy[asyncio]==2.0.31
+asyncpg==0.29.0
+alembic==1.13.2
+
+# S2.3 REST API
+fastapi==0.111.0
+passlib[argon2]==1.7.4   # password hashing (argon2)
+
+# S2.4 auth
+PyJWT==2.8.0             # JWT access/refresh (HS256)
+email-validator==2.1.1   # pydantic EmailStr
+
+# test-only
+pytest==8.4.2
+pytest-asyncio==0.23.8
+httpx==0.27.0            # FastAPI TestClient transport

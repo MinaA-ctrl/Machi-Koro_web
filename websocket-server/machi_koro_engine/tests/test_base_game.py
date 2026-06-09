@@ -7,8 +7,8 @@ to guard that Harbour behavior is unchanged.
 """
 import pytest
 
-from game_engine import create_initial_state, resolve_cards, check_win
-from game_config import (
+from machi_koro_engine.game_engine import create_initial_state, resolve_cards, check_win
+from machi_koro_engine.game_config import (
     BASE_GAME, HARBOUR_GAME, GameConfig, BASE_ESTABLISHMENTS, config_for_version,
 )
 

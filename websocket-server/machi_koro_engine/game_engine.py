@@ -1,10 +1,10 @@
 import random
 from copy import deepcopy
-from card_defs import (
+from .card_defs import (
     CARD_DEFS, LANDMARK_DEFS,
     WHEAT_SYMBOL_CARDS, CUP_SYMBOL_CARDS, BREAD_SYMBOL_CARDS, GEAR_SYMBOL_CARDS,
 )
-from game_config import HARBOUR_GAME
+from .game_config import HARBOUR_GAME
 
 _LANDMARK_BY_ID = {lm['id']: lm for lm in LANDMARK_DEFS}
 
