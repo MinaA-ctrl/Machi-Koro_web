@@ -3,10 +3,13 @@ on the Postgres Table/Player models + repository. Server-authoritative: host-onl
 kick/start and seat-ownership rename via the guest-identity stand-in; passwords
 hashed (argon2) and enforced on join, never leaked.
 """
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import current_identity, hash_password, mint_ws_token, user_id_from, verify_password
+from app.config import stale_waiting_min
 from app.deps import clean_name, get_session, valid_code
 from app.entitlements import can_host
 from app.ratelimit import create_limit
@@ -112,7 +115,10 @@ async def start_game(
 
 @router.get("", response_model=list[TableListItem])
 async def list_tables(search: str = "", session: AsyncSession = Depends(get_session)):
-    rows = await repo.list_public_waiting(session, search.strip())
+    # Hide stale waiting tables (DB-driven, restart-safe): only show recently-created
+    # ones, even before the reaper deletes them.
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_waiting_min())
+    rows = await repo.list_public_waiting(session, search.strip(), waiting_cutoff=cutoff)
     return [
         TableListItem(
             code=t.join_code, name=t.name, game_version=t.game_version, sharp=t.sharp,

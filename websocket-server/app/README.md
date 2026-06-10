@@ -104,6 +104,21 @@ token_type:"bearer"}` pair.
   is bound to (code, seat, identity) and not replayable.
 - **Passwords:** argon2; hashed on register, verified on login/join, never returned.
 
+## Table lifecycle (cleanup)
+Abandoned tables don't linger. DB-driven (restart-safe), no in-memory state:
+- **Browse filter:** `GET /tables` hides waiting tables older than
+  `MK_STALE_WAITING_MIN` (default 30 min) — using `created_at`.
+- **Reaper** (`app/reaper.py`, background `asyncio` task started in lifespan, every
+  `MK_REAPER_INTERVAL_SEC` = 300 s, sleep-first): **deletes** waiting tables idle past
+  `MK_STALE_WAITING_MIN` (host never started; FK-cascades players/state), and **marks
+  `abandoned`** playing games whose last `game_states.updated_at` is past
+  `MK_ABANDONED_PLAYING_MIN` (default 120 min; falls back to `created_at` if a started
+  table has no state row yet). `abandoned` is a terminal status (migration 0005 widened
+  the `status` CHECK) so they stop accumulating.
+- Complements the lobby-WS host-leave delete; the reaper covers REST-created-then-
+  abandoned + abandoned-mid-game. ⚠️ Runs **in-process (single-instance assumption)** —
+  at scale, one designated worker/cron. (On the "revisit at scale" list.)
+
 ## Security review (S2.4 — JWT + WS-token path)
 - **Signature/expiry:** JWTs are HS256, verified by PyJWT (`jwt.decode` checks sig +
   `exp`); tampered/expired/missing → 401 (tested). The WS token is HMAC-SHA256 with

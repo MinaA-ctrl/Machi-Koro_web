@@ -100,7 +100,9 @@ class Table(Base):
     __tablename__ = "tables"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('waiting', 'playing', 'finished')", name="ck_table_status"
+            # 'abandoned' is a terminal status the reaper sets on idle playing games.
+            "status IN ('waiting', 'playing', 'finished', 'abandoned')",
+            name="ck_table_status",
         ),
     )
 

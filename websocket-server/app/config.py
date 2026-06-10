@@ -29,3 +29,22 @@ def require_secrets() -> None:
         raise RuntimeError(
             "MK_ENV=prod but required secrets are missing/insecure: " + ", ".join(problems)
         )
+
+
+# ── Table-lifecycle thresholds (env-driven, sane defaults) ───────────────────
+
+def stale_waiting_min() -> float:
+    """A waiting table older than this (created_at) is stale — hidden from the lobby
+    and reaped (host never started). Default 30 min."""
+    return float(os.getenv("MK_STALE_WAITING_MIN", "30"))
+
+
+def abandoned_playing_min() -> float:
+    """A playing game idle this long (no game_states save) is abandoned — marked
+    terminal so it stops accumulating. Default 120 min."""
+    return float(os.getenv("MK_ABANDONED_PLAYING_MIN", "120"))
+
+
+def reaper_interval_sec() -> float:
+    """How often the background reaper runs. Default 300 s (5 min)."""
+    return float(os.getenv("MK_REAPER_INTERVAL_SEC", "300"))

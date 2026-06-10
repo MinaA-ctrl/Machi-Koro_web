@@ -19,8 +19,9 @@ from __future__ import annotations
 from typing import Optional
 
 import secrets
+from datetime import datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, exists, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -188,9 +189,12 @@ async def get_table_with_players(session: AsyncSession, join_code: str) -> Optio
     return result.scalar_one_or_none()
 
 
-async def list_public_waiting(session: AsyncSession, search: str = "") -> list[tuple[Table, int]]:
+async def list_public_waiting(
+    session: AsyncSession, search: str = "", waiting_cutoff: datetime | None = None
+) -> list[tuple[Table, int]]:
     """Public, waiting tables whose name matches `search`, newest first, each with a
-    live player count. Mirrors the WP list query (LIMIT 50)."""
+    live player count (LIMIT 50). When `waiting_cutoff` is given, stale waiting tables
+    (created before it) are hidden — the lobby only shows recently-created tables."""
     stmt = (
         select(Table, func.count(Player.id))
         .outerjoin(Player, Player.table_id == Table.id)
@@ -199,6 +203,8 @@ async def list_public_waiting(session: AsyncSession, search: str = "") -> list[t
         .order_by(Table.created_at.desc())
         .limit(50)
     )
+    if waiting_cutoff is not None:
+        stmt = stmt.where(Table.created_at >= waiting_cutoff)
     if search:
         stmt = stmt.where(Table.name.ilike(f"%{search}%"))
     rows = await session.execute(stmt)
@@ -260,6 +266,38 @@ async def remove_waiting_player(session: AsyncSession, join_code: str, seat: int
     removed = await remove_player_by_seat(session, table.id, seat)
     await session.commit()
     return removed
+
+
+# ── Table-lifecycle reaping (cutoff-injectable for deterministic tests) ───────
+
+async def delete_stale_waiting(session: AsyncSession, cutoff: datetime) -> int:
+    """Delete waiting tables created before `cutoff` (host never started). FK CASCADE
+    removes their players/state. Returns the number deleted."""
+    result = await session.execute(
+        delete(Table).where(Table.status == "waiting", Table.created_at < cutoff)
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
+async def abandon_idle_playing(session: AsyncSession, cutoff: datetime) -> int:
+    """Mark playing games 'abandoned' when their last activity predates `cutoff`.
+    Activity = the latest game_states.updated_at (per-action save); a playing table
+    with no state row yet falls back to its created_at. Returns the number marked."""
+    has_stale_state = exists().where(
+        GameState.table_id == Table.id, GameState.updated_at < cutoff
+    )
+    has_any_state = exists().where(GameState.table_id == Table.id)
+    result = await session.execute(
+        update(Table)
+        .where(
+            Table.status == "playing",
+            has_stale_state | (~has_any_state & (Table.created_at < cutoff)),
+        )
+        .values(status="abandoned")
+    )
+    await session.commit()
+    return result.rowcount or 0
 
 
 # ── Users / accounts (S2.4 — JWT auth) ───────────────────────────────────────
