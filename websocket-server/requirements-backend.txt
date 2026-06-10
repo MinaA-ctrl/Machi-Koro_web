@@ -1,12 +1,13 @@
-# Stage-2 backend deps (S2.2 persistence + S2.3 REST API).
-# Kept separate from requirements.txt so the live ws image stays lean and unchanged
-# while this layer is dormant; folded into the main image at the S2.6/S2.7 cutover.
+# Stage-2 backend deps — the FastAPI + Postgres game backend (app.main).
+# The single requirements file for the backend image (Dockerfile.backend); the old
+# websocket-server/requirements.txt was retired with main.py in S2.7.
 SQLAlchemy[asyncio]==2.0.31
 asyncpg==0.29.0
 alembic==1.13.2
 
-# S2.3 REST API
+# S2.3 REST API + serving
 fastapi==0.111.0
+uvicorn==0.29.0          # ASGI server (serves app.main:app)
 passlib[argon2]==1.7.4   # password hashing (argon2)
 
 # S2.4 auth

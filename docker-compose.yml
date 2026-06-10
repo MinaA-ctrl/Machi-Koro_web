@@ -14,10 +14,8 @@ services:
     networks:
       - machikoro_net
 
-  # Stage 2 (S2.2): Postgres for the new FastAPI backend's persistence layer.
-  # S2.6a: now backs the `backend` service (run alongside the live MVP for parity
-  # testing; live traffic flips in S2.7). Port 5433 on the host to avoid clashing
-  # with a local Postgres.
+  # Postgres for the FastAPI backend's persistence layer (game data, accounts,
+  # entitlements). Host port 5433 to avoid clashing with a local Postgres.
   postgres:
     image: postgres:16
     container_name: machikoro_postgres
@@ -44,34 +42,15 @@ services:
       WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
       WORDPRESS_DB_USER: ${MYSQL_USER}
       WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
-      # Shared HMAC secret for signing game WebSocket tokens (must match websocket service)
-      MK_WS_SECRET: ${MK_WS_SECRET}
     volumes:
       - wp_data:/var/www/html
       - ./wp-plugin/machi-koro:/var/www/html/wp-content/plugins/machi-koro
     networks:
       - machikoro_net
 
-  websocket:
-    build: ./websocket-server
-    container_name: machikoro_ws
-    restart: always
-    environment:
-      DB_HOST: db
-      DB_NAME: ${MYSQL_DATABASE}
-      DB_USER: ${MYSQL_USER}
-      DB_PASSWORD: ${MYSQL_PASSWORD}
-      # Must be identical to the wordpress service's MK_WS_SECRET
-      MK_WS_SECRET: ${MK_WS_SECRET}
-    depends_on:
-      - db
-    networks:
-      - machikoro_net
-
-  # Stage 2 (S2.6a): the new FastAPI + Postgres backend (app.main), run ALONGSIDE
-  # the live websocket/wordpress for parity testing. Reachable through nginx under
-  # /api/* (REST) and /api/ws/* (WebSocket). Migrations apply on startup. Live
-  # traffic does NOT flip here — that's S2.7.
+  # The Stage-2 FastAPI + Postgres backend (app.main) — the live game backend.
+  # Serves REST + WebSocket through nginx under /api/* and /api/ws/*. Applies
+  # Alembic migrations on startup; MK_ENV=prod enforces real secrets.
   backend:
     build:
       context: ./websocket-server
@@ -102,15 +81,14 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - wordpress
-      - websocket
       - backend
     networks:
       - machikoro_net
 
 volumes:
-  db_data:
+  db_data:   # MySQL — WordPress core (pages/posts) only
   wp_data:
-  pg_data:   # Stage 2 (S2.2) Postgres — dormant until cutover
+  pg_data:   # Postgres — the game backend's data
 
 networks:
   machikoro_net:

@@ -1,23 +1,20 @@
 <?php
 /**
  * Plugin Name: Machi Koro
- * Description: Online multiplayer Machi Koro (Harbor Expansion) game.
- * Version: 0.1.0
+ * Description: Online multiplayer Machi Koro — WordPress page-host for the FastAPI + Postgres backend (Stage 2).
+ * Version: 0.2.0
  */
 
 if (!defined('ABSPATH')) exit;
 
-define('MK_VERSION', '0.1.0');
-// Schema version: bump whenever a migration is added to mk_migrate(). Kept
-// separate from MK_VERSION so schema changes are independent of plugin releases.
-define('MK_DB_VERSION', '4');   // 3: + sharp column (D-BE); 4: + variable_supply column
+define('MK_VERSION', '0.2.0');
 define('MK_DIR', plugin_dir_path(__FILE__));
 define('MK_URL', plugin_dir_url(__FILE__));
 
-require_once MK_DIR . 'includes/db.php';
-require_once MK_DIR . 'includes/api.php';
+// Page-host only (Stage 2, S2.7): WordPress serves the shortcode pages + assets;
+// the JS client talks to the new FastAPI + Postgres backend behind nginx's /api.
+// The old WP REST surface (includes/api.php) and the MySQL schema bootstrap
+// (includes/db.php, mk_install/mk_migrate + the activation/upgrade hooks) were
+// retired here — all game logic, REST, persistence, and auth now live in the
+// backend. Orphaned wp_mk_* MySQL tables are harmless and left in place.
 require_once MK_DIR . 'includes/shortcodes.php';
-
-register_activation_hook(__FILE__, 'mk_install');
-// Apply pending migrations on live installs without a reactivation.
-add_action('plugins_loaded', 'mk_maybe_migrate');

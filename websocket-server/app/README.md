@@ -3,9 +3,10 @@
 The new backend's HTTP API: a FastAPI reimplementation of the WordPress `api.php`
 tables surface, on the S2.2 Postgres repository + the `machi_koro_engine` package.
 
-**PARALLEL BUILD — not serving LIVE traffic.** As of S2.6a the backend *runs* as a
-compose service (alongside the live stack) but no live traffic is flipped to it —
-that's S2.7. Nothing here is imported by the live `main.py`.
+**This is the live game backend (since S2.7).** WordPress is page-host only; the old
+WP REST surface, the MySQL game schema, and the old Python WebSocket server
+(`main.py`) were retired. nginx routes `/api/*` (REST) and `/api/ws/*` (WebSocket)
+here. See `Developer stages/stage-2-handoffs/cutover-runbook.md` for deploy steps.
 
 ## Running it (S2.6a) — compose service + nginx routing
 `docker compose up` brings up `postgres` + **`backend`** (`app.main:app`,
