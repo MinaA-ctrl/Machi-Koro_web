@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import current_identity, hash_password, mint_ws_token, user_id_from, verify_password
 from app.deps import clean_name, get_session, valid_code
 from app.entitlements import can_host
+from app.ratelimit import create_limit
 from app.schemas import (
     CreateTableReq, CreateTableResp, JoinReq, JoinResp, KickReq, KickResp,
     PlayerOut, RenameReq, RenameResp, StartResp, TableDetail, TableListItem,
@@ -21,7 +22,7 @@ MAX_PLAYERS = 5
 ALLOWED_VERSIONS = ("basic", "harbour")
 
 
-@router.post("", response_model=CreateTableResp, status_code=201)
+@router.post("", response_model=CreateTableResp, status_code=201, dependencies=[Depends(create_limit)])
 async def create_table(
     req: CreateTableReq,
     session: AsyncSession = Depends(get_session),

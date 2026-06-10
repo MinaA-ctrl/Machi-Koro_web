@@ -15,9 +15,9 @@ services:
       - machikoro_net
 
   # Stage 2 (S2.2): Postgres for the new FastAPI backend's persistence layer.
-  # DEV/parallel only — DORMANT: no service connects to it yet (the live MVP runs
-  # on `db` above). Wired in at the S2.6/S2.7 cutover. Port 5433 on the host to
-  # avoid clashing with a local Postgres.
+  # S2.6a: now backs the `backend` service (run alongside the live MVP for parity
+  # testing; live traffic flips in S2.7). Port 5433 on the host to avoid clashing
+  # with a local Postgres.
   postgres:
     image: postgres:16
     container_name: machikoro_postgres
@@ -68,6 +68,30 @@ services:
     networks:
       - machikoro_net
 
+  # Stage 2 (S2.6a): the new FastAPI + Postgres backend (app.main), run ALONGSIDE
+  # the live websocket/wordpress for parity testing. Reachable through nginx under
+  # /api/* (REST) and /api/ws/* (WebSocket). Migrations apply on startup. Live
+  # traffic does NOT flip here — that's S2.7.
+  backend:
+    build:
+      context: ./websocket-server
+      dockerfile: Dockerfile.backend
+    container_name: machikoro_backend
+    restart: always
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-machikoro}
+      DB_USER: ${POSTGRES_USER:-machikoro}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-machikoro}
+      MK_ENV: prod                       # enforces real secrets + rate limiting
+      MK_JWT_SECRET: ${MK_JWT_SECRET}     # required (boot fails if unset/insecure)
+      MK_WS_SECRET: ${MK_WS_SECRET}       # required; same value the WS token uses
+    depends_on:
+      - postgres
+    networks:
+      - machikoro_net
+
   nginx:
     image: nginx:alpine
     container_name: machikoro_nginx
@@ -79,6 +103,7 @@ services:
     depends_on:
       - wordpress
       - websocket
+      - backend
     networks:
       - machikoro_net
 

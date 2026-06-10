@@ -1,24 +1,86 @@
 /* global MK */
 
-// Stable guest ID persisted in localStorage
-if (!localStorage.getItem('mk_guest_id')) {
-    localStorage.setItem('mk_guest_id', 'g-' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+// ── Auth: guest-JWT bootstrap + Bearer + refresh (S2.6b) ───────────────────────
+// The FastAPI backend replaces the WP nonce + X-MK-Guest header with a JWT bearer.
+// We bootstrap a guest token (POST /auth/guest) to preserve today's no-friction
+// flow; access + refresh live in localStorage so they survive the full-page
+// navigations between home → waiting room → game. On a 401 we refresh once and retry.
+const TOKENS = {
+    get access()  { return localStorage.getItem('mk_access'); },
+    get refresh() { return localStorage.getItem('mk_refresh'); },
+    set(pair) {
+        if (pair && pair.access_token)  localStorage.setItem('mk_access',  pair.access_token);
+        if (pair && pair.refresh_token) localStorage.setItem('mk_refresh', pair.refresh_token);
+    },
+    clear() { localStorage.removeItem('mk_access'); localStorage.removeItem('mk_refresh'); },
+};
+
+// Ensure a guest JWT exists before an authenticated call. Idempotent: reuses any
+// stored access token, so the host keeps a stable identity across create → start.
+async function ensureAuth(displayName) {
+    if (TOKENS.access) return;
+    try {
+        const r = await fetch(MK.apiBase + '/auth/guest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ display_name: displayName || 'Guest' }),
+        });
+        if (r.ok) TOKENS.set(await r.json());
+    } catch (e) { /* offline — the next REST call surfaces the error */ }
 }
-const MK_GUEST_ID = localStorage.getItem('mk_guest_id');
+
+// Rotate tokens via the refresh grant. Clears both on failure so the next
+// ensureAuth() re-guests cleanly.
+async function tryRefresh() {
+    const rt = TOKENS.refresh;
+    if (!rt) return false;
+    try {
+        const r = await fetch(MK.apiBase + '/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: rt }),
+        });
+        if (r.ok) { TOKENS.set(await r.json()); return true; }
+    } catch (e) { /* fall through to clear */ }
+    TOKENS.clear();
+    return false;
+}
+
+// Core REST call: attaches the Bearer, parses JSON, normalizes FastAPI's
+// {detail}+status errors to {error,status,message}, and retries once after a
+// token refresh on 401. Success returns the parsed body unchanged.
+async function apiFetch(method, path, body, _retried) {
+    const headers = {};
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (TOKENS.access)      headers['Authorization'] = 'Bearer ' + TOKENS.access;
+    let r;
+    try {
+        r = await fetch(MK.apiBase + path, {
+            method, headers,
+            ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        });
+    } catch (e) {
+        return { error: true, status: 0, message: 'Network error' };
+    }
+    if (r.status === 401 && !_retried && await tryRefresh()) {
+        return apiFetch(method, path, body, true);
+    }
+    const text = await r.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (e) { data = {}; }
+    if (!r.ok) {
+        let msg = 'Request failed';
+        if (data && typeof data.detail === 'string') msg = data.detail;
+        else if (data && Array.isArray(data.detail) && data.detail[0] && data.detail[0].msg) msg = data.detail[0].msg;
+        else if (data && data.message) msg = data.message;
+        return { error: true, status: r.status, message: msg };
+    }
+    return data;
+}
 
 const api = {
-    get:  (path)       => fetch(MK.apiBase + path, {
-        headers: { 'X-WP-Nonce': MK.nonce, 'X-MK-Guest': MK_GUEST_ID },
-    }).then(r => r.json()),
-    post: (path, body) => fetch(MK.apiBase + path, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-WP-Nonce': MK.nonce,
-            'X-MK-Guest': MK_GUEST_ID,
-        },
-        body: JSON.stringify(body),
-    }).then(r => r.json()),
+    get:  (path)       => apiFetch('GET',  path),
+    post: (path, body) => apiFetch('POST', path, body === undefined ? {} : body),
 };
 
 // ── Home Page ─────────────────────────────────────────────────────────────────
@@ -71,8 +133,10 @@ if (document.getElementById('mk-home')) {
     };
 
     // Send a join request; `password` is included only for protected tables.
-    function doJoin(code, password) {
-        const guestName = $('mk-guest-name')?.value || 'Guest';
+    // Bootstrap a guest JWT (named for the joiner) before the authenticated POST.
+    async function doJoin(code, password) {
+        const guestName = $('mk-guest-name')?.value || MK.displayName || 'Guest';
+        await ensureAuth(guestName);
         const body = { guest_name: guestName };
         if (password != null) body.password = password;
         return api.post('/tables/' + code + '/join', body);
@@ -126,7 +190,7 @@ if (document.getElementById('mk-home')) {
             if (res.seat !== undefined) { goWaiting(code, res.seat, res.token); return; }
             // Re-enable so the user can retry without reopening the modal.
             submit.disabled = false;
-            if (res.data?.status === 403) {
+            if (res.status === 403) {
                 showErr('Wrong password. Try again.');
                 input.select();
             } else {
@@ -167,7 +231,7 @@ if (document.getElementById('mk-home')) {
         const body = {
             name:       $('mk-table-name').value || 'Machi Koro Table',
             is_public:  isPublic,
-            guest_name: $('mk-guest-name')?.value || 'Guest',
+            guest_name: $('mk-guest-name')?.value || MK.displayName || 'Guest',
             version:    selectedVersion(),
             // Sharp composes with either base (D-BE field name = `sharp`); default off.
             sharp:      $('mk-sharp-check')?.checked || false,
@@ -176,9 +240,12 @@ if (document.getElementById('mk-home')) {
         };
         // Only send a password when the host actually set one — protects the table.
         if (password) body.password = password;
+        // Bootstrap a guest JWT (named for the host) before the authenticated POST.
+        await ensureAuth(body.guest_name);
         const res = await api.post('/tables', body);
         if (res.code) {
-            goWaiting(res.code, 0, res.token);
+            // Create now returns the host's seat (0) + per-seat WS token directly.
+            goWaiting(res.code, res.seat, res.token);
         } else {
             alert(res.message || 'Could not create table.');
         }
@@ -296,7 +363,7 @@ if (document.getElementById('mk-waiting-room')) {
                 <span class="mk-player-name" data-seat="${p.seat}">${esc(p.display_name)}</span>
                 <span class="mk-badge ${isGuest ? 'mk-badge-guest' : ''}">${isGuest ? 'Guest' : 'Registered'}</span>
                 ${isMine && isGuest ? `<button class="mk-btn-small" onclick="editGuestName(${p.seat})">✏️</button>` : ''}
-                ${myIsHost && !isMine ? `<button class="mk-btn-small" style="color:#c0392b" onclick="kickPlayer(${p.id})">✕</button>` : ''}
+                ${myIsHost && !isMine ? `<button class="mk-btn-small" style="color:#c0392b" onclick="kickPlayer(${p.seat})">✕</button>` : ''}
             </div>`;
         }).join('');
 
@@ -334,10 +401,11 @@ if (document.getElementById('mk-waiting-room')) {
         });
     };
 
-    window.kickPlayer = async (playerId) => {
-        const res = await api.post(`/tables/${code}/kick`, { player_id: playerId });
-        if (res.seat !== null && res.seat !== undefined) {
-            ws.send(JSON.stringify({ event: 'player_kicked', seat: res.seat }));
+    // Backend kicks by SEAT now (was player_id) and echoes kicked_seat.
+    window.kickPlayer = async (seat) => {
+        const res = await api.post(`/tables/${code}/kick`, { seat });
+        if (!res.error && res.kicked_seat !== undefined && res.kicked_seat !== null) {
+            ws.send(JSON.stringify({ event: 'player_kicked', seat: res.kicked_seat }));
         }
     };
 
@@ -351,7 +419,7 @@ if (document.getElementById('mk-waiting-room')) {
             window.location.href = '/game/?code=' + code;
         } else {
             const errEl = $('mk-start-error');
-            errEl.textContent = res.code === 'too_few'
+            errEl.textContent = res.status === 409
                 ? 'Not enough players at the table.'
                 : (res.message || 'Could not start game.');
             errEl.classList.remove('mk-hidden');

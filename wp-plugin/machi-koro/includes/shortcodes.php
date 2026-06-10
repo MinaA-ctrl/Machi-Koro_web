@@ -11,16 +11,22 @@ add_action('wp_enqueue_scripts', function () {
     wp_enqueue_script('mk-app', MK_URL . 'assets/app.js', [], filemtime(MK_DIR . 'assets/app.js'), true);
 
     $play_page = get_page_by_path('play');
+    // S2.6b: the JS client now talks to the new FastAPI backend behind nginx's
+    // /api/ prefix (REST) and /api/ws/ (WebSocket). Auth is a JWT bearer bootstrapped
+    // by the client (POST /api/auth/guest), so the WP REST nonce is gone. WordPress
+    // is just the page-host here. `displayName` seeds the guest-JWT name for logged-in
+    // WP users (the guest-name input is hidden for them).
+    $current_user = wp_get_current_user();
     wp_localize_script('mk-app', 'MK', [
-        'apiBase' => rest_url('machi-koro/v1'),
-        'nonce'   => wp_create_nonce('wp_rest'),
-        'wsUrl'   => home_url('', 'http') === home_url('', 'https')
-                        ? 'wss://' . $_SERVER['HTTP_HOST'] . '/ws/'
-                        : 'ws://' . $_SERVER['HTTP_HOST'] . '/ws/',
-        'userId'  => get_current_user_id(),
-        'loggedIn'=> is_user_logged_in(),
-        'homeUrl' => $play_page ? get_permalink($play_page) : '/',
-        'mySeat'  => (int) ($_SESSION['mk_seat'] ?? -1),
+        'apiBase'     => '/api',
+        'wsUrl'       => home_url('', 'http') === home_url('', 'https')
+                        ? 'wss://' . $_SERVER['HTTP_HOST'] . '/api/ws/'
+                        : 'ws://' . $_SERVER['HTTP_HOST'] . '/api/ws/',
+        'userId'      => get_current_user_id(),
+        'loggedIn'    => is_user_logged_in(),
+        'displayName' => $current_user && $current_user->exists() ? $current_user->display_name : '',
+        'homeUrl'     => $play_page ? get_permalink($play_page) : '/',
+        'mySeat'      => (int) ($_SESSION['mk_seat'] ?? -1),
     ]);
 });
 

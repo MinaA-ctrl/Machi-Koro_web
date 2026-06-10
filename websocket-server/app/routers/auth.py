@@ -13,6 +13,7 @@ from app.auth import (
     hash_password, make_subject, parse_identity, verify_password,
 )
 from app.deps import clean_name, get_session
+from app.ratelimit import auth_limit
 from app.schemas import GuestReq, LoginReq, RefreshReq, RegisterReq, TokenPair, UserOut
 from persistence import repository as repo
 
@@ -33,7 +34,7 @@ def _user_out(user) -> UserOut:
     )
 
 
-@router.post("/register", response_model=TokenPair, status_code=201)
+@router.post("/register", response_model=TokenPair, status_code=201, dependencies=[Depends(auth_limit)])
 async def register(req: RegisterReq, session: AsyncSession = Depends(get_session)):
     if await repo.get_user_by_email(session, req.email):
         raise HTTPException(409, "Email already registered")
@@ -45,7 +46,7 @@ async def register(req: RegisterReq, session: AsyncSession = Depends(get_session
     return _tokens(make_subject("registered", user.id))
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post("/login", response_model=TokenPair, dependencies=[Depends(auth_limit)])
 async def login(req: LoginReq, session: AsyncSession = Depends(get_session)):
     user = await repo.get_user_by_email(session, req.email)
     # Same error whether the email is unknown or the password is wrong (no enumeration).
@@ -54,7 +55,7 @@ async def login(req: LoginReq, session: AsyncSession = Depends(get_session)):
     return _tokens(make_subject("registered", user.id))
 
 
-@router.post("/guest", response_model=TokenPair, status_code=201)
+@router.post("/guest", response_model=TokenPair, status_code=201, dependencies=[Depends(auth_limit)])
 async def guest(req: GuestReq, session: AsyncSession = Depends(get_session)):
     display = clean_name(req.display_name, 64, default="Guest")
     user = await repo.create_user(session, kind="guest", display_name=display, language=req.language)

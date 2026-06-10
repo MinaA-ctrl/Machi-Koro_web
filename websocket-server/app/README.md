@@ -3,9 +3,42 @@
 The new backend's HTTP API: a FastAPI reimplementation of the WordPress `api.php`
 tables surface, on the S2.2 Postgres repository + the `machi_koro_engine` package.
 
-**PARALLEL BUILD — not serving live.** The MVP still runs `websocket-server/main.py`
-on MySQL; at the S2.6/S2.7 cutover the container entrypoint switches to
-`app.main:app`. Nothing here is imported by the live `main.py`.
+**PARALLEL BUILD — not serving LIVE traffic.** As of S2.6a the backend *runs* as a
+compose service (alongside the live stack) but no live traffic is flipped to it —
+that's S2.7. Nothing here is imported by the live `main.py`.
+
+## Running it (S2.6a) — compose service + nginx routing
+`docker compose up` brings up `postgres` + **`backend`** (`app.main:app`,
+`Dockerfile.backend`) next to the live `wordpress` + `websocket` + `nginx`. The
+backend **applies Alembic migrations on startup** (`backend-entrypoint.sh`) then
+serves uvicorn on `:8001`. It reads Postgres via `DB_*` and requires
+`MK_JWT_SECRET` + `MK_WS_SECRET` (it sets `MK_ENV=prod`, so it **refuses to boot**
+on missing/insecure secrets).
+
+### nginx path scheme — the **S2.6b contract** (where the JS points)
+The new backend is reachable through nginx under `/api`, run *alongside* the live
+routes (which are untouched), so both stacks serve in parallel:
+
+| Path (browser) | → upstream | Service |
+|---|---|---|
+| `/api/<rest>` | `backend:8001/<rest>` | new REST (`/api/auth/*`, `/api/tables`, …) |
+| `/api/ws/<code>/{game,lobby}/<seat>` | `backend:8001/ws/...` | new game/lobby WebSocket |
+| `/ws/...` | `websocket:8001` | **live** WS (main.py/MySQL) — unchanged |
+| `/` | `wordpress:80` | WordPress page-host — unchanged |
+
+So S2.6b points the JS client at **`/api/...`** for REST and **`/api/ws/...`** for
+sockets. nginx strips the `/api` prefix (trailing-slash `proxy_pass`) and forwards
+`X-Real-IP` / `X-Forwarded-For` (the rate limiter keys on it). Live traffic flips
+to `/api` only at **S2.7**.
+
+## Security gates (S2.6a)
+- **Real secrets enforced:** `MK_ENV=prod` → `require_secrets()` (lifespan) aborts
+  boot if `MK_JWT_SECRET` is unset/insecure or `MK_WS_SECRET` is unset. Dev/test
+  (no `MK_ENV`) skips the guard.
+- **Rate limiting** (`app/ratelimit.py`, per-IP fixed window, ports the WP
+  `mk_client_ip` fallback): `/auth/register|login|guest` 10/60s, table create 5/60s
+  → 429 when exceeded. **On** in prod (or `MK_RATE_LIMIT=on`); **off by default** so
+  tests aren't throttled (one test flips it on to prove it works).
 
 ## Layout
 ```
