@@ -33,7 +33,12 @@ from .game_engine import (
     calculate_scores,
     advance_turn,
     seed,
+    build_prompt_payload,
+    default_response,
+    PROMPT_TIMEOUT_SECONDS,
 )
+
+from . import events
 
 __all__ = [
     # state + actions
@@ -44,6 +49,12 @@ __all__ = [
     "calculate_scores",
     "advance_turn",
     "seed",
+    # interactive prompts (S3.4)
+    "build_prompt_payload",
+    "default_response",
+    "PROMPT_TIMEOUT_SECONDS",
+    # keyed events (S3.4/S3.5)
+    "events",
     # config seam
     "GameConfig",
     "build_config",

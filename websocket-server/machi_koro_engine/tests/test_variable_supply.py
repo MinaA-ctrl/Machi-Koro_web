@@ -228,12 +228,15 @@ class TestDefaultOff:
         assert set(s["supply"]) == set(cfg.establishment_ids)
 
     def test_classic_state_byte_identical(self):
-        # The full state dict for a default-off config is exactly the classic one.
+        # A default-off config gets no Variable-Supply 'deck' key. The guarantee this
+        # test guards is VS no-leakage; `events`/`event_seq` are the universal S3.5
+        # keyed-event stream (present in every game, classic or VS), so they're in the
+        # baseline set below — not a VS leak.
         s = create_initial_state(info(2), config=HARBOUR_GAME)
         expected_keys = {
             "phase", "version", "active_seat", "last_roll", "last_dice", "doubles",
             "ap_active", "ap_used", "tech_invest_used", "interactive_active_copies",
             "pending_prompt", "players", "market", "supply", "card_defs", "winner",
-            "game_seq", "log",
+            "game_seq", "log", "events", "event_seq",
         }
         assert set(s) == expected_keys         # no 'deck', nothing extra

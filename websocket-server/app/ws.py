@@ -14,8 +14,11 @@ import json
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from machi_koro_engine import (
-    calculate_scores, config_for, config_for_version, create_initial_state, handle_action,
+    PROMPT_TIMEOUT_SECONDS, build_prompt_payload, calculate_scores, config_for,
+    config_for_version, create_initial_state, default_response, handle_action,
 )
+from machi_koro_engine import events as mk_events
+from machi_koro_engine.game_engine import emit
 from persistence import repository as repo
 from persistence.database import async_session
 
@@ -28,6 +31,12 @@ lobby_rooms: dict[str, dict[str, WebSocket]] = {}   # code -> {seat_str -> ws}
 game_rooms: dict[str, dict[str, WebSocket]] = {}    # code -> {seat_str -> ws}
 game_states: dict[str, dict] = {}                   # code -> authoritative state dict
 _state_locks: dict[str, asyncio.Lock] = {}          # code -> per-game serialization lock
+
+# Interactive-prompt auto-resolve (S3.4): one pending timeout task per game. The
+# `token` is bumped each time a new prompt is issued, so a stale timer that wakes
+# after the prompt was answered/superseded no-ops on a token mismatch.
+_prompt_timers: dict[str, asyncio.Task] = {}        # code -> running timeout task
+_prompt_tokens: dict[str, int] = {}                 # code -> current prompt token
 
 
 def _lock_for(code: str) -> asyncio.Lock:
@@ -140,6 +149,124 @@ async def _load_or_create_state(code: str):
         return None
 
 
+# ── Action dispatch + animation/prompt broadcasting (S3.4) ────────────────────
+# `_dispatch` runs ONE action and emits every resulting WS message. It assumes the
+# per-game lock is already held (the main loop and the timeout both hold it). It
+# preserves all legacy messages (state_update, game_toast, coin_event, prompt) and
+# adds the two new contract messages:
+#   • game_events — the ordered keyed-event delta produced by this action (the
+#     granular animation script: dice, payouts, market reveal, …). The frontend
+#     animates these over the authoritative state_update.
+#   • game_prompt — the structured interactive prompt for the active player.
+
+async def _dispatch(code: str, seat: int, msg: dict) -> None:
+    state = game_states.get(code)
+    if state is None:
+        return
+    ev_before = state.get("event_seq", 0)
+    result = handle_action(state, seat, msg)
+
+    if result.get("broadcast"):
+        # Persist-then-broadcast (QA-001): scores first on a finish so scores_saved
+        # is in the snapshot, then the state, then the wire.
+        if state.get("phase") == "finished":
+            await _persist_scores(code)
+        await _persist_state(code)
+        await broadcast(game_rooms, code, {"event": "state_update", "state": state})
+
+        # Granular animation stream: only the events THIS action appended, in order.
+        # Filter by seq (not list index) so the engine's rolling-buffer trim can't
+        # shift our slice.
+        new_events = [e for e in state.get("events", []) if e["seq"] > ev_before]
+        if new_events:
+            await broadcast(game_rooms, code, {"event": "game_events", "events": new_events})
+
+    if result.get("announce"):
+        await broadcast(game_rooms, code, {"event": "game_toast", "text": result["announce"]})
+
+    if result.get("coin_changes"):
+        for seat_str, ws in list(game_rooms.get(code, {}).items()):
+            changes = result["coin_changes"].get(int(seat_str), [])
+            if changes:
+                try:
+                    await ws.send_text(json.dumps({"event": "coin_event", "changes": changes}))
+                except Exception:
+                    pass
+
+    if result.get("transfers"):
+        for transfer_text in result["transfers"]:
+            await broadcast(game_rooms, code, {"event": "game_toast", "text": transfer_text})
+
+    # Legacy prompt (harbor/reroll yes-no) — unchanged, for the live WP-JS UI.
+    if result.get("prompt"):
+        active_ws = game_rooms[code].get(str(state["active_seat"]))
+        if active_ws:
+            try:
+                await active_ws.send_text(json.dumps({
+                    "event": "prompt",
+                    "text": result["prompt"]["text"],
+                    "promptId": result["prompt"]["id"],
+                }))
+            except Exception:
+                pass
+
+    # Structured prompt for the React UI + (re)arm / clear the auto-resolve timer.
+    if result.get("broadcast"):
+        await _sync_prompt(code)
+
+
+async def _sync_prompt(code: str) -> None:
+    """Send the structured `game_prompt` to the active player (if one is pending)
+    and arm its auto-resolve timeout. Clears any prior timer first."""
+    _cancel_prompt_timer(code)
+    state = game_states.get(code)
+    if state is None:
+        return
+    payload = build_prompt_payload(state)
+    if not payload:
+        return  # no pending prompt → nothing to send, timer already cleared
+
+    active_ws = game_rooms.get(code, {}).get(str(state["active_seat"]))
+    if active_ws:
+        try:
+            await active_ws.send_text(json.dumps({"event": "game_prompt", **payload}))
+        except Exception:
+            pass  # active player offline → reconnect re-emits (see game_ws)
+
+    if payload.get("default") is not None:
+        token = _prompt_tokens.get(code, 0) + 1
+        _prompt_tokens[code] = token
+        delay = payload.get("timeout_seconds") or PROMPT_TIMEOUT_SECONDS
+        task = asyncio.create_task(_prompt_timeout(code, token, delay))
+        task.add_done_callback(_log_task_exception)
+        _prompt_timers[code] = task
+
+
+def _cancel_prompt_timer(code: str) -> None:
+    task = _prompt_timers.pop(code, None)
+    # Never cancel the currently-running timeout task (it cancels via token check).
+    if task and task is not asyncio.current_task() and not task.done():
+        task.cancel()
+
+
+async def _prompt_timeout(code: str, token: int, delay: float) -> None:
+    """After `delay`s with no response, auto-apply the prompt's default on behalf of
+    the (silent/disconnected) active player, so the game can't stall. A token
+    mismatch means the prompt was already answered or superseded — then no-op."""
+    await asyncio.sleep(delay)
+    async with _lock_for(code):
+        if _prompt_tokens.get(code) != token:
+            return
+        state = game_states.get(code)
+        if state is None or not state.get("pending_prompt"):
+            return
+        msg = default_response(state)
+        if not msg:
+            return
+        _prompt_timers.pop(code, None)   # this timer has fired; let _dispatch re-arm
+        await _dispatch(code, state["active_seat"], msg)
+
+
 # ── Lobby WebSocket (no token gate, as today) ─────────────────────────────────
 
 @router.websocket("/ws/{code}/lobby/{seat}")
@@ -224,6 +351,18 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
             "state": game_states[code],
             "connected_count": len(game_rooms.get(code, {})),
         }))
+        # Reconnection (S3.4): if this player is the active player and a prompt is
+        # outstanding, re-send the structured prompt so their modal reappears. The
+        # original auto-resolve timer keeps running, so a dropped player can't stall
+        # the game; they just regain the choice if they return in time.
+        st = game_states[code]
+        if st.get("pending_prompt") and st["active_seat"] == seat:
+            payload = build_prompt_payload(st)
+            if payload:
+                try:
+                    await websocket.send_text(json.dumps({"event": "game_prompt", **payload}))
+                except Exception:
+                    pass
 
     try:
         while True:
@@ -262,48 +401,14 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
                         new_state["active_seat"] = connected_seats[0]
                         new_state["game_seq"] = state.get("game_seq", 0) + 1  # QA-006
                         game_states[code] = new_state
+                        _cancel_prompt_timer(code)   # fresh game → drop any stale timer
                         await _persist_state(code)
                         await broadcast(game_rooms, code, {"event": "state_update", "state": new_state})
                     continue
 
-                result = handle_action(state, seat, msg)
-
-                if result.get("broadcast"):
-                    # On a finish, persist scores first so the scores_saved flag is in
-                    # the snapshot save_state writes. Persist before broadcasting so
-                    # players never see a state that isn't durably saved (QA-001).
-                    if state.get("phase") == "finished":
-                        await _persist_scores(code)
-                    await _persist_state(code)
-                    await broadcast(game_rooms, code, {"event": "state_update", "state": state})
-
-                if result.get("announce"):
-                    await broadcast(game_rooms, code, {"event": "game_toast", "text": result["announce"]})
-
-                if result.get("coin_changes"):
-                    for seat_str, ws in list(game_rooms.get(code, {}).items()):
-                        changes = result["coin_changes"].get(int(seat_str), [])
-                        if changes:
-                            try:
-                                await ws.send_text(json.dumps({"event": "coin_event", "changes": changes}))
-                            except Exception:
-                                pass
-
-                if result.get("transfers"):
-                    for transfer_text in result["transfers"]:
-                        await broadcast(game_rooms, code, {"event": "game_toast", "text": transfer_text})
-
-                if result.get("prompt"):
-                    active_ws = game_rooms[code].get(str(state["active_seat"]))
-                    if active_ws:
-                        try:
-                            await active_ws.send_text(json.dumps({
-                                "event": "prompt",
-                                "text": result["prompt"]["text"],
-                                "promptId": result["prompt"]["id"],
-                            }))
-                        except Exception:
-                            pass
+                # One serialized action → all resulting messages (state_update,
+                # game_events, toasts, coin_event, prompt, game_prompt) + timeout arming.
+                await _dispatch(code, seat, msg)
 
     except WebSocketDisconnect:
         game_rooms.get(code, {}).pop(str(seat), None)
@@ -320,6 +425,8 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
             game_states.pop(code, None)
             game_rooms.pop(code, None)
             _state_locks.pop(code, None)
+            _cancel_prompt_timer(code)
+            _prompt_tokens.pop(code, None)
 
 
 async def _delayed_auto_win(code: str, seat: int, delay: int = 15) -> None:
@@ -342,7 +449,10 @@ async def _delayed_auto_win(code: str, seat: int, delay: int = 15) -> None:
                 state["winner"] = winner_seat
                 state["phase"] = "finished"
                 state["scores"] = calculate_scores(state)
-                state["log"].append(f"🏆 {winner['name']} wins — all other players left!")
+                # Keyed event (S3.5): the forfeit win is translatable like any other.
+                e = emit(state, mk_events.WIN_FORFEIT, seat=winner_seat, name=winner["name"])
+                _cancel_prompt_timer(code)
                 await _persist_scores(code)
                 await _persist_state(code)
                 await broadcast(game_rooms, code, {"event": "state_update", "state": state})
+                await broadcast(game_rooms, code, {"event": "game_events", "events": [e]})

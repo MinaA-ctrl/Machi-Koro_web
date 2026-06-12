@@ -223,3 +223,102 @@ def test_sharp_vs_game_with_cleaning_company_pick(client, monkeypatch):
         opp = next(p for p in after["players"] if p["seat"] == 1)
         assert opp["renovation"].get("cafe") == 1                   # closed for renovation
         assert next(p for p in after["players"] if p["seat"] == 0)["coins"] >= 1  # +1 per closed
+
+
+# ── S3.4/S3.5 — keyed event stream + structured prompts over WS ───────────────
+
+def recv_events_msg(ws, max_msgs=12):
+    """Receive until a `game_events` message appears; return its event list."""
+    for _ in range(max_msgs):
+        msg = ws.receive_json()
+        if msg.get("event") == "game_events":
+            return msg["events"]
+    raise AssertionError("did not receive a game_events message")
+
+
+def test_roll_broadcasts_keyed_game_events(client, monkeypatch):
+    code = _code()
+    seed_started(code, players=[(0, "A", 10), (1, "B", 20)])
+    monkeypatch.setattr("machi_koro_engine.game_engine.roll_die", lambda: 1)  # wheat hits
+
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")
+        ws0.send_json({"event": "roll", "dice_count": 1})
+        events = recv_events_msg(ws0)
+        types = [e["t"] for e in events]
+        assert "roll" in types                                   # the dice truth is emitted
+        roll_ev = next(e for e in events if e["t"] == "roll")
+        assert roll_ev["dice"] == [1] and roll_ev["total"] == 1 and roll_ev["dice_count"] == 1
+        # Events are strictly ordered by their monotonic seq (UI sequences on it).
+        seqs = [e["seq"] for e in events]
+        assert seqs == sorted(seqs)
+
+
+def test_structured_game_prompt_sent_to_active_player(client, monkeypatch):
+    code = _code()
+    seed_started(code, players=[(0, "A", 10), (1, "B", 20)])
+    rolls = iter([5, 5])
+    monkeypatch.setattr("machi_koro_engine.game_engine.roll_die", lambda: next(rolls))
+
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")
+        active = next(p for p in ws_mod.game_states[code]["players"] if p["seat"] == 0)
+        for lm in active["landmarks"]:
+            if lm["id"] in ("harbor", "train_station"):
+                lm["built"] = True
+
+        ws0.send_json({"event": "roll", "dice_count": 2})        # 10 → harbor prompt
+        gp = recv_event(ws0, "game_prompt")
+        assert gp["promptId"] == "harbor_bonus"
+        assert gp["params"]["total_with_bonus"] == 12
+        assert gp["default"] == {"event": "prompt_response", "answer": False}
+        assert gp["response_event"] == "prompt_response"
+
+
+def test_reconnect_reemits_pending_prompt(client, monkeypatch):
+    code = _code()
+    seed_started(code, sharp=True, players=[(0, "A", 10), (1, "B", 20)])
+    rolls = iter([3, 5])  # → 8 = Cleaning Company
+    monkeypatch.setattr("machi_koro_engine.game_engine.roll_die", lambda: next(rolls))
+
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")
+        st = ws_mod.game_states[code]
+        active = next(p for p in st["players"] if p["seat"] == 0)
+        active["cards"]["cleaning_company"] = 1
+        next(lm for lm in active["landmarks"] if lm["id"] == "train_station")["built"] = True
+        next(p for p in st["players"] if p["seat"] == 1)["cards"]["cafe"] = 1
+        ws0.send_json({"event": "roll", "dice_count": 2})
+        recv_event(ws0, "game_prompt")                           # prompt while connected
+
+    # Reconnect the active player mid-prompt → the prompt is re-emitted.
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")                          # snapshot first
+        gp = recv_event(ws0, "game_prompt")
+        assert gp["type"] == "cleaning_company"
+        assert "cafe" in gp["params"]["targets"]
+
+
+def test_prompt_timeout_auto_resolves_with_default(client, monkeypatch):
+    code = _code()
+    seed_started(code, sharp=True, players=[(0, "A", 10), (1, "B", 20)])
+    rolls = iter([3, 5])  # → 8 = Cleaning Company
+    monkeypatch.setattr("machi_koro_engine.game_engine.roll_die", lambda: next(rolls))
+    # Make the auto-resolve fire near-instantly instead of the 45s default.
+    monkeypatch.setattr("machi_koro_engine.game_engine.PROMPT_TIMEOUT_SECONDS", 0.1)
+
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")
+        st = ws_mod.game_states[code]
+        active = next(p for p in st["players"] if p["seat"] == 0)
+        active["cards"]["cleaning_company"] = 1
+        next(lm for lm in active["landmarks"] if lm["id"] == "train_station")["built"] = True
+        next(p for p in st["players"] if p["seat"] == 1)["cards"]["cafe"] = 1
+
+        ws0.send_json({"event": "roll", "dice_count": 2})
+        rolled = recv_event(ws0, "state_update")["state"]
+        assert rolled["phase"] == "cleaning_company"
+        # Don't respond — the server auto-applies the default (pick first target).
+        resolved = recv_event(ws0, "state_update", max_msgs=20)["state"]
+        assert resolved["phase"] == "build"
+        assert resolved["pending_prompt"] is None

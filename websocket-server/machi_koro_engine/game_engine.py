@@ -1,5 +1,6 @@
 import random
 from copy import deepcopy
+from . import events as ev
 from .card_defs import (
     CARD_DEFS, LANDMARK_DEFS,
     WHEAT_SYMBOL_CARDS, CUP_SYMBOL_CARDS, BREAD_SYMBOL_CARDS, GEAR_SYMBOL_CARDS,
@@ -106,6 +107,12 @@ def create_initial_state(players_info, config=HARBOUR_GAME):
         'winner':         None,
         'game_seq':       0,
         'log':            [],
+        # Keyed (structured) events — the i18n + animation stream (S3.4/S3.5). A
+        # bounded rolling buffer for reconnect/replay context; the live per-action
+        # delta is pushed separately (ws `game_events`). `event_seq` is a monotonic
+        # stamp so the frontend can order/dedupe across reconnects. See events.py.
+        'events':         [],
+        'event_seq':      0,
     }
     # Variable Supply only: carry the face-down draw pile in state (persists via
     # save/load). Its presence is the runtime signal that VS is active — classic
@@ -151,6 +158,37 @@ def give_coins(player, amount):
 def add_log(state, msg):
     state['log'].append(msg)
     state['log'] = state['log'][-15:]
+
+
+# ── Keyed events (i18n + animation stream) ───────────────────────────────────
+# Every player-facing string the engine produces is also a structured event:
+# `{'t': <type>, 'seq': N, ...params}` appended to state['events']. The frontend
+# localizes from `t`+params; state['log'] keeps the English render (legacy UI).
+# See events.py for the type vocabulary and the EN renderers.
+
+def _append_event(state, t, **params):
+    seq = state.get('event_seq', 0) + 1
+    state['event_seq'] = seq
+    e = {'t': t, 'seq': seq, **params}
+    bucket = state.setdefault('events', [])
+    bucket.append(e)
+    if len(bucket) > 60:          # bounded replay buffer; live deltas pushed by ws
+        del bucket[:-60]
+    return e
+
+def emit(state, t, **params):
+    """Emit a keyed event AND append its English render to state['log'] — the
+    i18n source of truth and the legacy English log in one call. Use for anything
+    the legacy engine logged via add_log."""
+    e = _append_event(state, t, **params)
+    add_log(state, ev.render_en(e))
+    return e
+
+def emit_event(state, t, **params):
+    """Emit a keyed event with NO log line — for toast-only announces and the new
+    animation-only events the legacy engine never logged, so state['log'] stays
+    byte-identical (see events.TOAST_ONLY)."""
+    return _append_event(state, t, **params)
 
 def opponents(state):
     active = state['active_seat']
@@ -226,7 +264,8 @@ def resolve_cards(state, roll):
                 paying[(player['seat'], card_id)] = max(0, count - closed)
                 if closed:
                     _reopen(player, card_id)
-                    add_log(state, f"{player['name']}'s {CARD_DEFS[card_id]['name']} reopens from renovation")
+                    emit(state, ev.RENOVATION_REOPEN,
+                         seat=player['seat'], name=player['name'], card_id=card_id)
 
     def act_of(player, card_id, count):
         # Paying copies for this roll (set in the renovation pass); falls back to
@@ -271,7 +310,10 @@ def resolve_cards(state, roll):
 
             taken = take_coins(active, opp, amount)
             if taken:
-                add_log(state, f"{opp['name']} takes {taken}🪙 from {active['name']} ({card['name']})")
+                emit(state, ev.TAKE,
+                     taker_seat=opp['seat'], taker_name=opp['name'],
+                     payer_seat=active['seat'], payer_name=active['name'],
+                     amount=taken, source=card_id)
                 gain(opp, taken, card['name'])
                 lose(active, taken, card['name'])
                 transfers.append(f"{active['name']} pays {taken}🪙 to {opp['name']} ({card['name']})")
@@ -308,7 +350,8 @@ def resolve_cards(state, roll):
 
             if amt:  # a gated card (corn_field) can resolve to 0 — stay quiet then
                 give_coins(player, amt)
-                add_log(state, f"{player['name']} gets {amt}🪙 ({card['name']})")
+                emit(state, ev.INCOME, seat=player['seat'], name=player['name'],
+                     amount=amt, source=card_id)
                 gain(player, amt, card['name'])
 
     # ── 3. Green — active player only ─────────────────────────────────────────
@@ -330,7 +373,8 @@ def resolve_cards(state, roll):
             pay = min(active['coins'], act * 2)
             if pay:
                 active['coins'] -= pay
-                add_log(state, f"{active['name']} pays {pay}🪙 to the bank (Loan Office)")
+                emit(state, ev.BANK_PAY, seat=active['seat'], name=active['name'],
+                     amount=pay, source='loan_office')
                 lose(active, pay, 'Loan Office')
             continue
 
@@ -374,13 +418,15 @@ def resolve_cards(state, roll):
             # "Vineyards you own" counts owned copies regardless of renovation.
             amt = act * 6 * card_count(active, 'vineyard')
             close_for_renovation(active, 'winery', act)
-            add_log(state, f"{active['name']}'s Winery closes for renovation")
+            emit(state, ev.RENOVATION_CLOSE, seat=active['seat'],
+                 name=active['name'], card_id='winery')
         else:
             amt = 0
 
         if amt:
             give_coins(active, amt)
-            add_log(state, f"{active['name']} gets {amt}🪙 ({card['name']})")
+            emit(state, ev.INCOME, seat=active['seat'], name=active['name'],
+                 amount=amt, source=card_id)
             gain(active, amt, card['name'])
 
     # ── 4. Purple — active player only ────────────────────────────────────────
@@ -397,7 +443,10 @@ def resolve_cards(state, roll):
             for opp in opponents(state):
                 taken = take_coins(opp, active, 2)
                 if taken:
-                    add_log(state, f"{active['name']} takes {taken}🪙 from {opp['name']} (Stadium)")
+                    emit(state, ev.TAKE,
+                         taker_seat=active['seat'], taker_name=active['name'],
+                         payer_seat=opp['seat'], payer_name=opp['name'],
+                         amount=taken, source='stadium')
                     gain(active, taken, 'Stadium')
                     lose(opp, taken, 'Stadium')
                     transfers.append(f"{opp['name']} pays {taken}🪙 to {active['name']} (Stadium)")
@@ -411,7 +460,10 @@ def resolve_cards(state, roll):
                 )
                 taken = take_coins(opp, active, symbol_cards)
                 if taken:
-                    add_log(state, f"{active['name']} takes {taken}🪙 from {opp['name']} (Publisher)")
+                    emit(state, ev.TAKE,
+                         taker_seat=active['seat'], taker_name=active['name'],
+                         payer_seat=opp['seat'], payer_name=opp['name'],
+                         amount=taken, source='publisher')
                     gain(active, taken, 'Publisher')
                     lose(opp, taken, 'Publisher')
                     transfers.append(f"{opp['name']} pays {taken}🪙 to {active['name']} (Publisher)")
@@ -422,7 +474,10 @@ def resolve_cards(state, roll):
                     tax = opp['coins'] // 2
                     taken = take_coins(opp, active, tax)
                     if taken:
-                        add_log(state, f"{active['name']} takes {taken}🪙 from {opp['name']} (Tax Office)")
+                        emit(state, ev.TAKE,
+                             taker_seat=active['seat'], taker_name=active['name'],
+                             payer_seat=opp['seat'], payer_name=opp['name'],
+                             amount=taken, source='tax_office')
                         gain(active, taken, 'Tax Office')
                         lose(opp, taken, 'Tax Office')
                         transfers.append(f"{opp['name']} pays {taken}🪙 to {active['name']} (Tax Office)")
@@ -434,7 +489,10 @@ def resolve_cards(state, roll):
             for opp in opponents(state):
                 taken = take_coins(opp, active, invested)
                 if taken:
-                    add_log(state, f"{active['name']} takes {taken}🪙 from {opp['name']} (Tech Startup)")
+                    emit(state, ev.TAKE,
+                         taker_seat=active['seat'], taker_name=active['name'],
+                         payer_seat=opp['seat'], payer_name=opp['name'],
+                         amount=taken, source='tech_startup')
                     gain(active, taken, 'Tech Startup')
                     lose(opp, taken, 'Tech Startup')
                     transfers.append(f"{opp['name']} pays {taken}🪙 to {active['name']} (Tech Startup)")
@@ -445,22 +503,26 @@ def resolve_cards(state, roll):
             total = sum(p['coins'] for p in all_players)
             share = total // len(all_players)
             remainder = total - share * len(all_players)
+            park_deltas = []
             for p in all_players:
                 before = p['coins']
                 p['coins'] = share + (remainder if p['seat'] == active['seat'] else 0)
                 delta = p['coins'] - before
+                park_deltas.append({'seat': p['seat'], 'name': p['name'],
+                                    'before': before, 'after': p['coins'], 'delta': delta})
                 if delta > 0:
                     gain(p, delta, 'Park')
                 elif delta < 0:
                     lose(p, -delta, 'Park')
-            add_log(state, f"{active['name']} pools and splits all coins equally (Park)")
+            emit(state, ev.PARK_SPLIT, seat=active['seat'], name=active['name'],
+                 deltas=park_deltas)
 
     # ── 5. City Hall — active player at 0 coins gets 1 (only if they own it) ──
     # Harbour pre-builds City Hall for everyone, so this fires as before there;
     # the Base game has no City Hall, so the safety net correctly does not apply.
     if active['coins'] == 0 and has_landmark(active, 'city_hall'):
         give_coins(active, 1)
-        add_log(state, f"{active['name']} gets 1🪙 (City Hall)")
+        emit(state, ev.CITY_HALL, seat=active['seat'], name=active['name'])
         gain(active, 1, 'City Hall')
 
     # Stash this roll's pre-reopen active-copy counts for the interactive green
@@ -483,7 +545,7 @@ def check_win(state):
         state['winner'] = active['seat']
         state['phase']  = 'finished'
         state['scores'] = calculate_scores(state)
-        add_log(state, f"🏆 {active['name']} wins!")
+        emit(state, ev.WIN, seat=active['seat'], name=active['name'])
         return True
     return False
 
@@ -541,7 +603,8 @@ def handle_action(state, seat, msg):
         state['doubles']    = doubles
         state['ap_active']  = doubles and has_landmark(active, 'amusement_park')
 
-        add_log(state, f"{active['name']} rolls {'🎲' * dice_count} → {total}")
+        emit(state, ev.ROLL, seat=active_seat, name=active['name'],
+             dice=list(dice), total=total, doubles=doubles, dice_count=dice_count)
 
         # Harbor bonus check
         if total >= 10 and has_landmark(active, 'harbor'):
@@ -595,7 +658,8 @@ def handle_action(state, seat, msg):
             state['last_roll']  = total
             state['doubles']    = doubles
             state['ap_active']  = doubles and has_landmark(active, 'amusement_park')
-            add_log(state, f"{active['name']} rerolls → {total}")
+            emit(state, ev.REROLL, seat=active_seat, name=active['name'],
+                 dice=list(dice), total=total, doubles=doubles, dice_count=len(dice))
 
             # Harbor bonus check on the fresh reroll — Radio Tower already spent
             if total >= 10 and has_landmark(active, 'harbor'):
@@ -624,7 +688,8 @@ def handle_action(state, seat, msg):
             count = card_count(p, 'tuna_boat')
             amt = count * tuna_total
             give_coins(p, amt)
-            add_log(state, f"{p['name']} gets {amt}🪙 from Tuna Boat ({dice[0]}+{dice[1]}={tuna_total})")
+            emit(state, ev.TUNA_PAYOUT, seat=p['seat'], name=p['name'],
+                 amount=amt, dice=[dice[0], dice[1]], total=tuna_total)
             tuna_changes[p['seat']] = [f"+{amt} Tuna Boat ({dice[0]}+{dice[1]}={tuna_total})"]
 
         state['phase'] = 'build'
@@ -643,7 +708,10 @@ def handle_action(state, seat, msg):
         tv_transfers = []
         tv_changes   = {}
         if taken:
-            add_log(state, f"{active['name']} takes {taken}🪙 from {target['name']} (TV Station)")
+            emit(state, ev.TAKE,
+                 taker_seat=active_seat, taker_name=active['name'],
+                 payer_seat=target['seat'], payer_name=target['name'],
+                 amount=taken, source='tv_station')
             tv_transfers.append(f"{target['name']} pays {taken}🪙 to {active['name']} (TV Station)")
             tv_changes[active_seat]       = [f"+{taken} TV Station"]
             tv_changes[target['seat']]    = [f"-{taken} TV Station"]
@@ -680,7 +748,12 @@ def handle_action(state, seat, msg):
             del opp['cards'][opp_card]
         opp['cards'][my_card] = opp['cards'].get(my_card, 0) + 1
 
-        add_log(state, f"{active['name']} traded {my_def['name']} ↔ {opp['name']}'s {opp_def['name']}")
+        emit(state, ev.TRADE, seat=active_seat, name=active['name'],
+             card_id=my_card, opp_seat=opp['seat'], opp_name=opp['name'],
+             opp_card_id=opp_card)
+        emit_event(state, ev.TRADE_DONE, seat=active_seat, name=active['name'],
+                   card_id=my_card, opp_seat=opp['seat'], opp_name=opp['name'],
+                   opp_card_id=opp_card)
         state['phase'] = 'build'
         state['pending_prompt'] = None
         return {'broadcast': True,
@@ -713,8 +786,8 @@ def handle_action(state, seat, msg):
         clean_changes = {}
         if closed_total:
             give_coins(active, closed_total)   # 1 coin per copy closed, from the bank
-            add_log(state, f"{active['name']} closes {closed_total}× {card['name']} "
-                           f"for renovation (+{closed_total}🪙 Cleaning Company)")
+            emit(state, ev.CLEANING, seat=active_seat, name=active['name'],
+                 card_id=card_type, count=closed_total)
             clean_changes[active_seat] = [f"+{closed_total} Cleaning Company"]
 
         state['pending_prompt'] = None
@@ -735,7 +808,8 @@ def handle_action(state, seat, msg):
         inv = active.setdefault('investments', {})
         inv['tech_startup'] = inv.get('tech_startup', 0) + 1
         state['tech_invest_used'] = True
-        add_log(state, f"{active['name']} invests 1🪙 in Tech Startup (total {inv['tech_startup']}🪙)")
+        emit(state, ev.TECH_INVEST, seat=active_seat, name=active['name'],
+             total=inv['tech_startup'])
         return {'broadcast': True, 'coin_changes': {active_seat: ['-1 Tech Startup (invest)']}}
 
     # ── Demolition Company landmark pick (Sharp C2) ───────────────────────────
@@ -770,7 +844,8 @@ def handle_action(state, seat, msg):
         _remove_card(active, card_id)
         _add_card(target, card_id)
         give_coins(active, 4)
-        add_log(state, f"{active['name']} gives {card['name']} to {target['name']} (+4🪙 Moving Company)")
+        emit(state, ev.MOVING_GIVE, seat=active_seat, name=active['name'],
+             card_id=card_id, target_seat=target['seat'], target_name=target['name'])
         remaining = state['pending_prompt'].get('remaining', 1) - 1
         state['pending_prompt'] = None
         if not _resume_moving(state, remaining):
@@ -796,18 +871,26 @@ def handle_action(state, seat, msg):
             active['coins'] -= card['cost']
             active['cards'][item_id] = active['cards'].get(item_id, 0) + 1
             state['supply'][item_id] -= 1
-            add_log(state, f"{active['name']} bought {card['name']}")
+            emit(state, ev.BUY_CARD, seat=active_seat, name=active['name'], card_id=item_id)
             if item_id == 'loan_office':
                 # Sharp C1: build-time payout — take 5 from the bank immediately.
                 give_coins(active, 5)
-                add_log(state, f"{active['name']} gets 5🪙 (Loan Office, on build)")
+                emit(state, ev.LOAN_BUILD, seat=active_seat, name=active['name'])
             # Variable Supply (Phase E): a sold-out stack (count → 0) leaves the
             # board and is replaced by the next type(s) drawn from the deck. Classic
             # games keep the key at 0 (no 'deck'), so this is a no-op there.
             if 'deck' in state and state['supply'].get(item_id, 0) == 0:
+                before = list(state['supply'])           # slot order before refill
                 state['supply'].pop(item_id, None)
                 _draw_to_market(state['deck'], state['supply'])
                 state['market'] = [CARD_DEFS[c] for c in state['supply']]
+                # Emit the explicit slot delta so the frontend animates
+                # buy → empty → reveal without diffing full state (S3.4).
+                revealed = [c for c in state['supply'] if c not in before]
+                emit_event(state, ev.MARKET_REVEAL,
+                           bought_card_id=item_id, slot_emptied=True,
+                           revealed=revealed,
+                           supply={c: state['supply'][c] for c in state['supply']})
 
         elif build_type == 'landmark':
             lm = next((l for l in active['landmarks'] if l['id'] == item_id), None)
@@ -815,7 +898,8 @@ def handle_action(state, seat, msg):
                 return {}
             active['coins'] -= lm['cost']
             lm['built'] = True
-            add_log(state, f"{active['name']} built {lm['name']} 🏛️")
+            emit(state, ev.BUY_LANDMARK, seat=active_seat, name=active['name'],
+                 landmark_id=item_id)
 
         if check_win(state):
             return {'broadcast': True}
@@ -827,20 +911,159 @@ def handle_action(state, seat, msg):
     if event == 'skip_build' and seat == active_seat and state['phase'] == 'build':
         if has_landmark(active, 'airport'):
             give_coins(active, 10)
-            add_log(state, f"{active['name']} gets 10🪙 (Airport)")
+            emit(state, ev.INCOME, seat=active_seat, name=active['name'],
+                 amount=10, source='airport')
         announce = _check_amusement_park(state)
         if not announce:
+            emit_event(state, ev.SKIP_BUILD, seat=active_seat, name=active['name'])
             announce = f"⏭️ {active['name']} skipped building."
         return {'broadcast': True, 'announce': announce}
 
     return {}
 
 
+# ── Interactive prompts: structured payload + timeout defaults (S3.4) ─────────
+# The engine already drives prompts via state['pending_prompt']. These two pure
+# functions expose that as a transport-agnostic contract for the WS layer:
+#   • build_prompt_payload(state) — the structured `game_prompt` message sent to
+#     the active player (id/type/params/options/default/timeout + an EN fallback).
+#   • default_response(state)     — the message the server auto-applies if the
+#     active player doesn't respond before the timeout (or to keep a game moving).
+# The frontend localizes prompt text from `promptId` + `params`; `text` is only an
+# English fallback. Responses are validated by handle_action exactly as a human's
+# would be, so every default below is a guaranteed-valid move.
+
+# Server waits this long for the active player before auto-applying the default.
+# The WS layer reads it; tests/integrators may override per call.
+PROMPT_TIMEOUT_SECONDS = 45
+
+
+def _richest_opponent(state):
+    """The opponent holding the most coins (ties → lowest seat). The neutral TV
+    Station / default target — never wastes the steal on a broke player."""
+    opps = [p for p in state['players'] if p['seat'] != state['active_seat']]
+    if not opps:
+        return None
+    return max(opps, key=lambda p: (p['coins'], -p['seat']))
+
+
+def build_prompt_payload(state):
+    """Structured prompt for the active player, or None if nothing is pending.
+
+    Shape: {promptId, type, active_seat, params, options, response_event,
+            default, timeout_seconds, text}. `promptId == type ==
+            state['pending_prompt']['type']`. The frontend renders from `type` +
+            `params` + `options`; `text` is an EN fallback only.
+    """
+    pp = state.get('pending_prompt')
+    if not pp:
+        return None
+    t = pp['type']
+    active = player_by_seat(state, state['active_seat'])
+    payload = {
+        'promptId': t, 'type': t, 'active_seat': state['active_seat'],
+        'params': {}, 'options': [], 'response_event': None,
+        'default': None, 'timeout_seconds': PROMPT_TIMEOUT_SECONDS, 'text': '',
+    }
+
+    if t == 'harbor_bonus':
+        roll = pp.get('roll')
+        payload['params'] = {'roll': roll, 'total_with_bonus': roll + 2}
+        payload['options'] = [{'value': True}, {'value': False}]
+        payload['response_event'] = 'prompt_response'
+        payload['default'] = {'event': 'prompt_response', 'answer': False}
+        payload['text'] = f"You rolled {roll}. Harbor: add +2 to make it {roll + 2}?"
+
+    elif t == 'reroll':
+        roll = state.get('last_roll')
+        payload['params'] = {'roll': roll}
+        payload['options'] = [{'value': True}, {'value': False}]
+        payload['response_event'] = 'prompt_response'
+        payload['default'] = {'event': 'prompt_response', 'answer': False}
+        payload['text'] = f"You rolled {roll}. Radio Tower: reroll?"
+
+    elif t == 'tv_station':
+        opps = [p for p in state['players'] if p['seat'] != state['active_seat']]
+        payload['params'] = {
+            'opponents': [{'seat': p['seat'], 'name': p['name'], 'coins': p['coins']}
+                          for p in opps],
+        }
+        payload['options'] = [{'target_seat': p['seat']} for p in opps]
+        payload['response_event'] = 'tv_station_pick'
+        tgt = _richest_opponent(state)
+        payload['default'] = ({'event': 'tv_station_pick', 'target_seat': tgt['seat']}
+                              if tgt else None)
+        payload['text'] = "TV Station: take 5🪙 from an opponent."
+
+    elif t == 'cleaning_company':
+        targets = pp.get('targets', [])
+        payload['params'] = {'targets': list(targets)}
+        payload['options'] = [{'card_type': cid} for cid in targets]
+        payload['response_event'] = 'cleaning_company_pick'
+        payload['default'] = ({'event': 'cleaning_company_pick', 'card_type': targets[0]}
+                              if targets else None)
+        payload['text'] = "Cleaning Company: pick an establishment type to close board-wide."
+
+    elif t == 'demolition':
+        targets = pp.get('targets', [])
+        payload['params'] = {'targets': list(targets), 'remaining': pp.get('remaining', 1)}
+        payload['options'] = [{'landmark_id': lid} for lid in targets]
+        payload['response_event'] = 'demolition_pick'
+        payload['default'] = ({'event': 'demolition_pick', 'landmark_id': targets[0]}
+                              if targets else None)
+        payload['text'] = "Demolition Company: choose a landmark to demolish (+8🪙)."
+
+    elif t == 'moving_company':
+        giveable = pp.get('giveable', [])
+        targets = pp.get('targets', [])
+        payload['params'] = {'giveable': list(giveable), 'targets': list(targets),
+                             'remaining': pp.get('remaining', 1)}
+        payload['options'] = {'cards': list(giveable), 'target_seats': list(targets)}
+        payload['response_event'] = 'moving_company_pick'
+        payload['default'] = ({'event': 'moving_company_pick',
+                               'card_id': giveable[0], 'target_seat': targets[0]}
+                              if giveable and targets else None)
+        payload['text'] = "Moving Company: give one establishment to another player (+4🪙)."
+
+    elif t == 'business_center':
+        opps = [p for p in state['players'] if p['seat'] != state['active_seat']]
+        mine = [c for c in active['cards'] if CARD_DEFS.get(c, {}).get('type') != 'Purple Major']
+        payload['params'] = {
+            'my_cards': sorted(mine),
+            'opponents': [{'seat': p['seat'], 'name': p['name'],
+                           'cards': sorted(c for c in p['cards']
+                                           if CARD_DEFS.get(c, {}).get('type') != 'Purple Major')}
+                          for p in opps],
+        }
+        payload['response_event'] = 'business_center'   # or 'skip_business_center'
+        payload['default'] = {'event': 'skip_business_center'}
+        payload['text'] = "Business Center: trade an establishment with an opponent, or skip."
+
+    elif t == 'tuna_roll':
+        payload['params'] = {'tuna_seats': list(pp.get('tuna_seats', []))}
+        payload['response_event'] = 'tuna_roll'
+        payload['default'] = {'event': 'tuna_roll'}
+        payload['text'] = "Tuna Boat: roll 2 dice to collect."
+
+    return payload
+
+
+def default_response(state):
+    """The message the server auto-applies if the active player times out, or None
+    if there's no pending prompt / no safe default. Always a move handle_action
+    accepts for the current active seat."""
+    payload = build_prompt_payload(state)
+    return payload['default'] if payload else None
+
+
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
 def _bc_announce(state, active):
-    """Return a broadcast announce string when Business Center phase just started, else None."""
+    """Return a broadcast announce string when Business Center phase just started,
+    else None. Also emits the keyed BC_OFFER event (toast-only) for the new UI —
+    fires once, since this is reached only on the transition into the phase."""
     if state.get('phase') == 'business_center':
+        emit_event(state, ev.BC_OFFER, seat=active['seat'], name=active['name'])
         return f"🔄 Business Center! {active['name']} may trade an establishment."
     return None
 
@@ -855,6 +1078,10 @@ def _quiet_announce(changes, transfers):
 def _finish_roll(state, roll):
     changes, transfers = resolve_cards(state, roll)
     _set_interactive_phase(state, roll)
+    # Keyed mirror of the legacy `_bc_announce or _quiet_announce` toast: a roll
+    # with no coin activity (and not a Business Center offer) emits NO_INCOME.
+    if state.get('phase') != 'business_center' and not changes and not transfers:
+        emit_event(state, ev.NO_INCOME)
     return changes, transfers
 
 
@@ -891,7 +1118,8 @@ def _demolish(state, player, lm_id):
         if lm['id'] == lm_id and lm['built'] and lm['id'] != 'city_hall':
             lm['built'] = False
             give_coins(player, 8)
-            add_log(state, f"{player['name']} demolishes {lm['name']} (+8🪙 Demolition Company)")
+            emit(state, ev.DEMOLISH, seat=player['seat'], name=player['name'],
+                 landmark_id=lm['id'])
             return True
     return False
 
@@ -1017,8 +1245,9 @@ def _set_interactive_phase(state, roll, tv_done=False, cleaning_done=False,
         and roll in CARD_DEFS['tuna_boat']['dice']
     ]
     if tuna_players:
-        names = ', '.join(p['name'] for p in tuna_players)
-        add_log(state, f"🐟 Tuna Boat! {names} — roll 2 dice to collect!")
+        emit(state, ev.TUNA_ANNOUNCE,
+             seats=[p['seat'] for p in tuna_players],
+             names=[p['name'] for p in tuna_players])
         state['phase'] = 'tuna_roll'
         state['pending_prompt'] = {
             'type': 'tuna_roll',
@@ -1032,8 +1261,8 @@ def _set_interactive_phase(state, roll, tv_done=False, cleaning_done=False,
 def _check_amusement_park(state):
     if state.get('ap_active') and not state['ap_used']:
         active = player_by_seat(state, state['active_seat'])
-        msg = f"🎡 Amusement Park! {active['name']} rolled doubles and gets another turn!"
-        add_log(state, msg)
+        msg = ev.render_en(emit(state, ev.AMUSEMENT_PARK,
+                                seat=active['seat'], name=active['name']))
         state['ap_active']      = False
         state['ap_used']        = True
         state['phase']          = 'roll'
