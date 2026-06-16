@@ -90,7 +90,7 @@ export function BrowseTables() {
                 </div>
                 <Button
                   variant="secondary"
-                  disabled={table.player_count >= 4}
+                  disabled={table.player_count >= 5}
                   onClick={() => join(table)}
                 >
                   {t('joinTable')}

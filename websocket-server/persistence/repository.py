@@ -21,7 +21,7 @@ from typing import Optional
 import secrets
 from datetime import datetime
 
-from sqlalchemy import delete, exists, func, select, update
+from sqlalchemy import and_, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -72,12 +72,21 @@ async def save_state(session: AsyncSession, join_code: str, state: dict) -> bool
     return True
 
 
-async def save_scores(session: AsyncSession, join_code: str, state: dict) -> int:
+async def save_scores(
+    session: AsyncSession,
+    join_code: str,
+    state: dict,
+    present_user_ids: set[int] | None = None,
+) -> int:
     """Persist one row per *registered* player when a finished game's state is given.
-    Guests (user_id is None) are skipped. Atomic + idempotent via the UNIQUE key
-    (table_id, game_seq, user_id) + ON CONFLICT DO UPDATE: a re-finish or concurrent
-    writer converges to exactly one row per (game, player), and a rematch (higher
-    game_seq) writes a fresh set. Returns the number of rows upserted."""
+    Guests (user_id is None) are skipped. When `present_user_ids` is given, players
+    who aren't in it (they left before the end) are skipped too — so a quitter doesn't
+    get a history entry. Atomic + idempotent via the UNIQUE key (table_id, game_seq,
+    user_id) + ON CONFLICT DO UPDATE. Returns the number of rows upserted.
+
+    `place` (1 = winner) and `total_players` are computed from the FULL final
+    standings — every player, guests included — so the place is accurate even in
+    guest-heavy games."""
     table = await get_table(session, join_code)
     if table is None:
         return 0
@@ -86,24 +95,36 @@ async def save_scores(session: AsyncSession, join_code: str, state: dict) -> int
 
     winner = state.get("winner")
     game_seq = state.get("game_seq", 0)
+    players = state["players"]
+    total_players = len(players)
+
+    # Rank every player: winner first, then most landmarks, then most coins.
+    def built(p: dict) -> int:
+        return sum(1 for lm in p["landmarks"] if lm["built"] and lm["id"] != "city_hall")
+
+    standings = sorted(
+        players,
+        key=lambda p: (p["seat"] != winner, -built(p), -p["coins"]),
+    )
+    place_by_seat = {p["seat"]: i + 1 for i, p in enumerate(standings)}
+
     rows = []
-    for p in state["players"]:
+    for p in players:
         user_id = p.get("user_id")
         if not user_id:  # registered players only; skip guests
             continue
-        # Same rule as the engine's landmarks_built / calculate_scores: built
-        # landmarks excluding City Hall.
-        landmarks_built = sum(
-            1 for lm in p["landmarks"] if lm["built"] and lm["id"] != "city_hall"
-        )
+        if present_user_ids is not None and user_id not in present_user_ids:
+            continue  # left before the end — no history entry
         rows.append(
             {
                 "table_id": table.id,
                 "user_id": user_id,
                 "game_seq": game_seq,
-                "landmarks_built": landmarks_built,
+                "landmarks_built": built(p),
                 "coins_at_end": p["coins"],
                 "won": p["seat"] == winner,
+                "place": place_by_seat[p["seat"]],
+                "total_players": total_players,
             }
         )
     if not rows:
@@ -116,11 +137,28 @@ async def save_scores(session: AsyncSession, join_code: str, state: dict) -> int
             "landmarks_built": stmt.excluded.landmarks_built,
             "coins_at_end": stmt.excluded.coins_at_end,
             "won": stmt.excluded.won,
+            "place": stmt.excluded.place,
+            "total_players": stmt.excluded.total_players,
         },
     )
     await session.execute(stmt)
     await session.commit()
     return len(rows)
+
+
+async def history_for_user(session: AsyncSession, user_id: int, limit: int = 50):
+    """A registered player's finished-game history, newest first: each row plus the
+    table's name and game version (for display). Tables that were deleted cascade
+    their scores away, so every returned row has a live table."""
+    stmt = (
+        select(Score, Table.name, Table.game_version)
+        .join(Table, Score.table_id == Table.id)
+        .where(Score.user_id == user_id)
+        .order_by(Score.played_at.desc())
+        .limit(limit)
+    )
+    rows = await session.execute(stmt)
+    return rows.all()
 
 
 # ── Table / player writes (S2.3 — used by the REST surface) ──────────────────
@@ -215,6 +253,20 @@ async def count_players(session: AsyncSession, table_id: int) -> int:
     return await session.scalar(
         select(func.count(Player.id)).where(Player.table_id == table_id)
     )
+
+
+async def live_stats(session: AsyncSession, waiting_cutoff: datetime) -> tuple[int, int]:
+    """(active_games, players_online): tables currently playing plus non-stale waiting
+    tables, and the players seated in them. DB-derived, so it's restart-safe."""
+    live = or_(
+        Table.status == "playing",
+        and_(Table.status == "waiting", Table.created_at >= waiting_cutoff),
+    )
+    games = await session.scalar(select(func.count()).select_from(Table).where(live))
+    players = await session.scalar(
+        select(func.count(Player.id)).join(Table, Player.table_id == Table.id).where(live)
+    )
+    return int(games or 0), int(players or 0)
 
 
 async def next_seat(session: AsyncSession, table_id: int) -> int:

@@ -36,7 +36,16 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
 
-  // Lock scroll + move focus in while open; restore focus on close.
+  // Keep the latest handlers in refs so the focus effect can depend on `open`
+  // alone. If it depended on `onClose`/`dismissable` (often inline arrows), every
+  // parent re-render — e.g. typing in an input inside the modal — would re-run it
+  // and `root.focus()` would steal the caret back out of the field on each keystroke.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const dismissableRef = useRef(dismissable)
+  dismissableRef.current = dismissable
+
+  // Lock scroll + move focus in once when opened; restore focus on close.
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement as HTMLElement | null
@@ -44,9 +53,9 @@ export function Modal({
     root?.focus()
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && dismissable) {
+      if (e.key === 'Escape' && dismissableRef.current) {
         e.stopPropagation()
-        onClose?.()
+        onCloseRef.current?.()
         return
       }
       if (e.key !== 'Tab' || !root) return
@@ -73,7 +82,10 @@ export function Modal({
       document.body.style.overflow = prevOverflow
       previouslyFocused?.focus?.()
     }
-  }, [open, dismissable, onClose])
+    // Intentionally keyed on `open` only — dismissable/onClose are read via refs so
+    // re-renders (e.g. typing inside the modal) don't re-trigger focus-in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   if (!open) return null
 

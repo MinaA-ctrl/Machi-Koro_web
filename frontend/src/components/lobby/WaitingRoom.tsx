@@ -128,6 +128,10 @@ export function WaitingRoom({ code }: { code: string }) {
         setMembership(m)
         setMembershipState(m)
       }
+      // Tell the room the game started so everyone navigates now (the lobby socket's
+      // default branch refetches the table → status 'playing' → into the game),
+      // instead of waiting for the slow safety poll.
+      lobby.send({ event: 'game_started' })
       router.push(`/game/${code}`)
     } catch (err) {
       show(err instanceof ApiError ? err.message : tt('networkError'), 'error')

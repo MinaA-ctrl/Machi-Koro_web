@@ -30,6 +30,7 @@ router = APIRouter()
 lobby_rooms: dict[str, dict[str, WebSocket]] = {}   # code -> {seat_str -> ws}
 game_rooms: dict[str, dict[str, WebSocket]] = {}    # code -> {seat_str -> ws}
 game_states: dict[str, dict] = {}                   # code -> authoritative state dict
+game_joined: dict[str, set[int]] = {}               # code -> seats that have ever connected this session
 _state_locks: dict[str, asyncio.Lock] = {}          # code -> per-game serialization lock
 
 # Interactive-prompt auto-resolve (S3.4): one pending timeout task per game. The
@@ -97,9 +98,17 @@ async def _persist_scores(code: str) -> None:
         return
     if state.get("phase") != "finished" or state.get("scores_saved"):
         return
+    # Only players still connected at the finish get a history entry — a quitter
+    # who left earlier is excluded ("if you didn't leave the game").
+    connected_seats = {int(s) for s in game_rooms.get(code, {})}
+    present_user_ids = {
+        p["user_id"]
+        for p in state["players"]
+        if p["seat"] in connected_seats and p.get("user_id")
+    }
     try:
         async with async_session() as session:
-            await repo.save_scores(session, code, state)
+            await repo.save_scores(session, code, state, present_user_ids=present_user_ids)
         state["scores_saved"] = True  # set only after a clean write
     except Exception as e:
         print(f"[game] save_scores error for {code}: {e}")
@@ -283,7 +292,14 @@ async def lobby_ws(websocket: WebSocket, code: str, seat: str):
             await broadcast(lobby_rooms, code, msg)
     except WebSocketDisconnect:
         lobby_rooms.get(code, {}).pop(seat, None)
-        if seat == "0":  # host occupies seat 0 — host leaving closes the table
+        # Once the game has started, leaving the lobby is the normal hand-off to the
+        # game channel — NOT abandonment. Don't close the table (the old code fired
+        # `table_closed` at everyone the moment the host moved to the game) or drop
+        # seats; the players are now in the game.
+        if await _table_has_started(code):
+            if not lobby_rooms.get(code):
+                lobby_rooms.pop(code, None)
+        elif seat == "0":  # host occupies seat 0 — host leaving a waiting table closes it
             await broadcast(lobby_rooms, code, {"event": "table_closed"})
             lobby_rooms.pop(code, None)
             await _delete_waiting_table(code)
@@ -293,6 +309,18 @@ async def lobby_ws(websocket: WebSocket, code: str, seat: str):
             if not lobby_rooms.get(code):
                 lobby_rooms.pop(code, None)
                 await _delete_waiting_table(code)
+
+
+async def _table_has_started(code: str) -> bool:
+    """True once the table has left 'waiting' (the game began). Leaving the lobby
+    after this point is the hand-off to the game channel, not abandonment."""
+    try:
+        async with async_session() as session:
+            table = await repo.get_table(session, code)
+            return bool(table and table.status != "waiting")
+    except Exception as e:
+        print(f"[lobby] status check failed for {code}: {e}")
+        return False
 
 
 async def _delete_waiting_table(code: str) -> None:
@@ -322,19 +350,27 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
         await websocket.close(code=4401)
         return
 
-    is_reconnect = (
-        code in game_states
-        and str(seat) not in game_rooms.get(code, {})
-        and any(p["seat"] == seat for p in game_states[code]["players"])
-    )
-    game_rooms.setdefault(code, {})[str(seat)] = websocket
+    # A *reconnect* is a seat that has connected to THIS game session before (an
+    # accidental exit/reload). The first time each player enters at game start is a
+    # plain join — even though the game state already exists (an earlier player
+    # loaded it), which is why "state exists + not currently connected" wrongly
+    # flagged everyone-after-the-first as a reconnect.
+    joined_seats = game_joined.setdefault(code, set())
+    is_reconnect = seat in joined_seats
+    joined_seats.add(seat)
 
-    if is_reconnect:
-        rejoiner = next((p for p in game_states[code]["players"] if p["seat"] == seat), None)
-        if rejoiner:
-            await broadcast(game_rooms, code, {
-                "event": "player_rejoined_game", "name": rejoiner["name"], "seat": seat,
-            })
+    # If this seat already maps to a live socket (a fast reconnect, a duplicate tab,
+    # or a dev StrictMode remount), close that older socket first so the seat points
+    # at exactly this connection. Without this, the old socket's later disconnect
+    # would pop the seat key and silence THIS (live) socket — the root of the
+    # "players disconnect on connect" race.
+    existing = game_rooms.get(code, {}).get(str(seat))
+    if existing is not None and existing is not websocket:
+        try:
+            await existing.close(code=4000)
+        except Exception:
+            pass
+    game_rooms.setdefault(code, {})[str(seat)] = websocket
 
     # Load/create under the lock + re-check so two simultaneous connects (a forced
     # restart reconnecting everyone at once) can't both build/insert.
@@ -344,6 +380,16 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
                 state = await _load_or_create_state(code)
                 if state:
                     game_states[code] = state
+
+    # Announce arrival now that the roster is loaded (so the first player's name is
+    # available too): "joined" on a first connect, "rejoined" on a genuine return.
+    if code in game_states:
+        arriver = next((p for p in game_states[code]["players"] if p["seat"] == seat), None)
+        if arriver:
+            await broadcast(game_rooms, code, {
+                "event": "player_rejoined_game" if is_reconnect else "player_joined_game",
+                "name": arriver["name"], "seat": seat,
+            })
 
     if code in game_states:
         await websocket.send_text(json.dumps({
@@ -411,6 +457,11 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
                 await _dispatch(code, seat, msg)
 
     except WebSocketDisconnect:
+        # Only act if THIS socket is still the registered one for the seat. A socket
+        # that was already replaced by a newer connection must not evict the live
+        # socket or fire a spurious "left"/auto-win — its disconnect is expected.
+        if game_rooms.get(code, {}).get(str(seat)) is not websocket:
+            return
         game_rooms.get(code, {}).pop(str(seat), None)
         if code in game_states:
             state = game_states[code]
@@ -424,6 +475,7 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
         if not game_rooms.get(code):
             game_states.pop(code, None)
             game_rooms.pop(code, None)
+            game_joined.pop(code, None)
             _state_locks.pop(code, None)
             _cancel_prompt_timer(code)
             _prompt_tokens.pop(code, None)

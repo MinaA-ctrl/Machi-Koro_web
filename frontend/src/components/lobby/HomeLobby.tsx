@@ -1,5 +1,6 @@
 'use client'
 
+import { useQuery } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
 import { useState } from 'react'
 
@@ -23,6 +24,13 @@ export function HomeLobby() {
   const { show } = useToast()
   const router = useRouter()
   useEnsureAuth()
+
+  // Live lobby stats — replaces the old hardcoded placeholders.
+  const { data: stats } = useQuery({
+    queryKey: ['stats'],
+    queryFn: () => api.stats(),
+    refetchInterval: 10_000,
+  })
 
   // ── Create-table form state ───────────────────────────────────────────────
   const [name, setName] = useState('')
@@ -267,8 +275,8 @@ export function HomeLobby() {
         </button>
 
         <dl className="mt-auto grid grid-cols-2 gap-3 pt-6">
-          <Stat value="14" label={t('activeGames')} />
-          <Stat value="52" label={t('playersOnline')} />
+          <Stat value={stats ? String(stats.active_games) : '—'} label={t('activeGames')} />
+          <Stat value={stats ? String(stats.players_online) : '—'} label={t('playersOnline')} />
         </dl>
       </section>
     </PaperCard>

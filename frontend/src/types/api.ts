@@ -112,6 +112,22 @@ export interface RenameResp {
   name: string
 }
 
+export interface StatsResp {
+  active_games: number
+  players_online: number
+}
+
+export interface ScoreHistoryItem {
+  table_name: string | null
+  game_version: string
+  place: number | null
+  total_players: number | null
+  won: boolean
+  landmarks_built: number
+  coins_at_end: number
+  played_at: string
+}
+
 /** Error envelope — FastAPI returns `{ detail: ... }`. */
 export interface ApiErrorBody {
   detail?: string | { msg?: string }[] | unknown

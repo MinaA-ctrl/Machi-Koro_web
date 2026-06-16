@@ -129,3 +129,19 @@ class KickResp(BaseModel):
 
 class RenameResp(BaseModel):
     name: str
+
+
+class StatsResp(BaseModel):
+    active_games: int
+    players_online: int
+
+
+class ScoreHistoryItem(BaseModel):
+    table_name: str | None
+    game_version: str
+    place: int | None
+    total_players: int | None
+    won: bool
+    landmarks_built: int
+    coins_at_end: int
+    played_at: datetime

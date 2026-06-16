@@ -28,6 +28,7 @@ export interface BoardHandlers {
   onBusinessSkip: () => void
   onPlayAgain: () => void
   onBackToLobby: () => void
+  onReact: (emoji: string) => void
 }
 
 interface BoardViewProps {
@@ -57,12 +58,18 @@ export function BoardView({ state, seat, mySeat, prompt, handlers }: BoardViewPr
   const { me, opponents, isMyTurn, activeName } = view
 
   return (
-    <div className="flex min-h-screen flex-col pb-6">
-      <BoardTopBar state={state} me={me} isMyTurn={isMyTurn} activeName={activeName} />
+    <div className="flex min-h-screen flex-col pb-6 lg:h-screen lg:min-h-0 lg:overflow-hidden lg:pb-0">
+      <BoardTopBar
+        state={state}
+        me={me}
+        isMyTurn={isMyTurn}
+        activeName={activeName}
+        onLeave={handlers.onBackToLobby}
+      />
       <OpponentsStrip opponents={opponents} activeSeat={state.active_seat} cardDefs={state.card_defs} />
 
-      <div className="grid flex-1 gap-4 px-container-padding py-2 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="flex min-w-0 flex-col gap-4">
+      <div className="grid flex-1 gap-4 px-container-padding py-2 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_340px] lg:grid-rows-[minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-4 lg:min-h-0">
           <FeltTable
             state={state}
             me={me}
@@ -70,6 +77,7 @@ export function BoardView({ state, seat, mySeat, prompt, handlers }: BoardViewPr
             onRoll={handlers.onRoll}
             onEndTurn={handlers.onEndTurn}
             onTechInvest={handlers.onTechInvest}
+            onReact={handlers.onReact}
           />
           <Market state={state} me={me} isMyTurn={isMyTurn} onBuy={handlers.onBuyEstablishment} />
         </div>

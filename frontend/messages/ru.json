@@ -16,7 +16,8 @@
     "milestones": "Достопримечательности",
     "store": "Магазин",
     "logs": "Журнал",
-    "account": "Аккаунт"
+    "account": "Аккаунт",
+    "rules": "Правила"
   },
   "locale": {
     "switch": "Язык",
@@ -56,7 +57,7 @@
     "subtitle": "Открытые деревни ждут игроков.",
     "empty": "Сейчас нет открытых столов — создайте свой!",
     "refresh": "Обновить",
-    "players": "{count}/4 игроков",
+    "players": "{count}/5 игроков",
     "protected": "Пароль",
     "version": "{version, select, basic {Базовая} harbour {Гавань} other {{version}}}",
     "joinTable": "Войти"
@@ -151,12 +152,38 @@
     "businessTrade": "Обменять",
     "techInvest": "Инвестировать в Технологический стартап",
     "techInvested": "Вложено",
-    "remainingChip": "осталось {count}"
+    "remainingChip": "осталось {count}",
+    "leave": "Выйти",
+    "leaveConfirmTitle": "Выйти из игры?",
+    "leaveConfirmBody": "Вы можете вернуться за этот стол, пока игра ещё идёт.",
+    "leaveConfirm": "Выйти",
+    "leaveCancel": "Остаться",
+    "reactions": "Реакции",
+    "reactWith": "Реакция {emoji}",
+    "points": "{points} очк."
   },
   "auth": {
-    "guestName": "Ваше имя",
-    "guestNamePlaceholder": "Гость",
-    "continueAsGuest": "Продолжить как гость"
+    "signIn": "Войти",
+    "createAccount": "Создать аккаунт",
+    "register": "Зарегистрироваться",
+    "cancel": "Отмена",
+    "close": "Закрыть",
+    "email": "Эл. почта",
+    "password": "Пароль",
+    "displayName": "Имя",
+    "emailPlaceholder": "you@example.com",
+    "passwordPlaceholder": "Ваш пароль",
+    "namePlaceholder": "Ваше имя",
+    "needAccount": "Нет аккаунта? Зарегистрируйтесь",
+    "haveAccount": "Уже есть аккаунт? Войдите",
+    "accountTitle": "Ваш аккаунт",
+    "signedInAs": "Вы вошли как {name}",
+    "logout": "Выйти",
+    "loggedIn": "Вы вошли",
+    "registered": "Аккаунт создан",
+    "loggedOut": "Вы вышли",
+    "emailTaken": "Эта почта уже зарегистрирована.",
+    "badCredentials": "Неверная почта или пароль."
   },
   "styleguide": {
     "title": "Tabletop Hearth — Гайд стилей",
@@ -248,5 +275,24 @@
     "market_reveal": "Рынок: {card} распродан → открыто {revealed}",
     "market_reveal_empty": "Рынок: {card} распродан",
     "unknown": "{type}"
+  },
+  "rulesPage": {
+    "title": "Как играть",
+    "subtitle": "Правила Базовой игры, а также дополнений «Гавань», «Улица миллионеров» и рынок из 10 карт.",
+    "back": "Назад"
+  },
+  "logs": {
+    "title": "История игр",
+    "close": "Закрыть",
+    "signInPrompt": "Войдите, чтобы увидеть историю игр.",
+    "empty": "Пока нет завершённых игр. Доиграйте партию до конца — и она появится здесь.",
+    "placeOf": "{place}-е место из {total}",
+    "versionBasic": "Базовая",
+    "versionHarbour": "Гавань"
+  },
+  "marketPage": {
+    "title": "Рынок",
+    "comingSoon": "Скоро",
+    "subtitle": "Настраивайте игру темами, аватарами и не только — магазин уже в пути."
   }
 }

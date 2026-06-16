@@ -16,7 +16,8 @@
     "milestones": "Milestones",
     "store": "Store",
     "logs": "Logs",
-    "account": "Account"
+    "account": "Account",
+    "rules": "Rules"
   },
   "locale": {
     "switch": "Language",
@@ -56,7 +57,7 @@
     "subtitle": "Public villages waiting for players.",
     "empty": "No open tables right now — start your own!",
     "refresh": "Refresh",
-    "players": "{count}/4 players",
+    "players": "{count}/5 players",
     "protected": "Password",
     "version": "{version, select, basic {Basic} harbour {Harbour} other {{version}}}",
     "joinTable": "Join"
@@ -151,12 +152,38 @@
     "businessTrade": "Trade",
     "techInvest": "Invest in Tech Startup",
     "techInvested": "Invested",
-    "remainingChip": "{count} left"
+    "remainingChip": "{count} left",
+    "leave": "Leave",
+    "leaveConfirmTitle": "Leave the game?",
+    "leaveConfirmBody": "You can rejoin from the same table while the game is still running.",
+    "leaveConfirm": "Leave",
+    "leaveCancel": "Stay",
+    "reactions": "Reactions",
+    "reactWith": "React with {emoji}",
+    "points": "{points} pts"
   },
   "auth": {
-    "guestName": "Your Name",
-    "guestNamePlaceholder": "Guest",
-    "continueAsGuest": "Continue as Guest"
+    "signIn": "Sign in",
+    "createAccount": "Create account",
+    "register": "Register",
+    "cancel": "Cancel",
+    "close": "Close",
+    "email": "Email",
+    "password": "Password",
+    "displayName": "Display name",
+    "emailPlaceholder": "you@example.com",
+    "passwordPlaceholder": "Your password",
+    "namePlaceholder": "Your name",
+    "needAccount": "Need an account? Register",
+    "haveAccount": "Already have an account? Sign in",
+    "accountTitle": "Your account",
+    "signedInAs": "Signed in as {name}",
+    "logout": "Log out",
+    "loggedIn": "Signed in",
+    "registered": "Account created",
+    "loggedOut": "Signed out",
+    "emailTaken": "That email is already registered.",
+    "badCredentials": "Wrong email or password."
   },
   "styleguide": {
     "title": "Tabletop Hearth — Styleguide",
@@ -248,5 +275,24 @@
     "market_reveal": "Market: {card} sold out → revealed {revealed}",
     "market_reveal_empty": "Market: {card} sold out",
     "unknown": "{type}"
+  },
+  "rulesPage": {
+    "title": "How to Play",
+    "subtitle": "Rules for the Basic game, plus the Harbour, Millionaire’s Row and 10-card market add-ons.",
+    "back": "Back"
+  },
+  "logs": {
+    "title": "Game history",
+    "close": "Close",
+    "signInPrompt": "Sign in to see your game history.",
+    "empty": "No finished games yet. Play one through to the end and it'll show up here.",
+    "placeOf": "Place {place} of {total}",
+    "versionBasic": "Basic",
+    "versionHarbour": "Harbour"
+  },
+  "marketPage": {
+    "title": "Market",
+    "comingSoon": "Coming soon",
+    "subtitle": "Customize your game with themes, avatars and more — the shop is on its way."
   }
 }

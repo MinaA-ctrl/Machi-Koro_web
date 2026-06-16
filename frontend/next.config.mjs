@@ -6,6 +6,9 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Emit a standalone server bundle so the production Docker image can run the app
+  // without the full node_modules tree (frontend/Dockerfile copies .next/standalone).
+  output: 'standalone',
   // The backend (FastAPI) is reached via NEXT_PUBLIC_API_BASE; no rewrites needed
   // for REST. WebSocket connections go direct to NEXT_PUBLIC_WS_BASE.
   //

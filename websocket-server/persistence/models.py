@@ -194,6 +194,9 @@ class Score(Base):
     landmarks_built: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     coins_at_end: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     won: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Finishing place (1 = winner) and table size, from the full final standings.
+    place: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_players: Mapped[int | None] = mapped_column(Integer, nullable=True)
     played_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     table: Mapped["Table"] = relationship(back_populates="scores")

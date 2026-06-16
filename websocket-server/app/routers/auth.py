@@ -14,7 +14,9 @@ from app.auth import (
 )
 from app.deps import clean_name, get_session
 from app.ratelimit import auth_limit
-from app.schemas import GuestReq, LoginReq, RefreshReq, RegisterReq, TokenPair, UserOut
+from app.schemas import (
+    GuestReq, LoginReq, RefreshReq, RegisterReq, ScoreHistoryItem, TokenPair, UserOut,
+)
 from persistence import repository as repo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -83,3 +85,27 @@ async def me(
     if not user:
         raise HTTPException(404, "Account not found")
     return _user_out(user)
+
+
+@router.get("/me/history", response_model=list[ScoreHistoryItem])
+async def my_history(
+    identity: str = Depends(current_identity), session: AsyncSession = Depends(get_session)
+):
+    """Finished-game history for the signed-in registered player. Guests have none."""
+    kind, user_id = parse_identity(identity)
+    if kind != "user":
+        return []
+    rows = await repo.history_for_user(session, user_id)
+    return [
+        ScoreHistoryItem(
+            table_name=name,
+            game_version=version,
+            place=score.place,
+            total_players=score.total_players,
+            won=score.won,
+            landmarks_built=score.landmarks_built,
+            coins_at_end=score.coins_at_end,
+            played_at=score.played_at,
+        )
+        for score, name, version in rows
+    ]

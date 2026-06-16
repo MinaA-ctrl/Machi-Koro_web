@@ -62,9 +62,22 @@ export function useGameSocket(
           case 'player_left_game':
             show(`${event.name} left`, 'warning')
             break
-          case 'player_rejoined_game':
-            show(`${event.name} rejoined`, 'success')
+          case 'player_joined_game':
+            // Don't announce my own arrival to myself.
+            if (event.seat !== seat) show(`${event.name} joined`, 'success')
             break
+          case 'player_rejoined_game':
+            if (event.seat !== seat) show(`${event.name} rejoined`, 'success')
+            break
+          case 'reaction': {
+            // Show others' reactions (skip the echo of my own).
+            if (event.seat === seat) break
+            const name = useGameStore
+              .getState()
+              .state?.players.find((p) => p.seat === event.seat)?.name
+            show(name ? `${event.emoji} ${name}` : event.emoji, 'info')
+            break
+          }
           default:
             break
         }

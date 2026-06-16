@@ -1,11 +1,12 @@
 'use client'
 
 import { useTranslations } from 'next-intl'
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useRouter } from '@/i18n/navigation'
 import { actions } from '@/lib/game-actions'
 import { getMembership } from '@/lib/membership'
+import type { Membership } from '@/lib/membership'
 import { useGameSocket } from '@/lib/use-game-socket'
 import { useGameStore } from '@/store/game-store'
 import { PaperCard } from '@/components/ui'
@@ -20,23 +21,32 @@ import { BoardView } from './BoardView'
  */
 export function GameBoard({ code }: { code: string }) {
   const router = useRouter()
-  const membership = useMemo(() => getMembership(code), [code])
+  // Membership lives in sessionStorage, which doesn't exist during SSR. Read it
+  // after mount (not in render) so the server and first client render agree —
+  // reading it synchronously here would diverge and trip a hydration mismatch.
+  const [membership, setMembershipValue] = useState<Membership | null>(null)
+  const [resolved, setResolved] = useState(false)
 
   const setMySeat = useGameStore((s) => s.setMySeat)
   const reset = useGameStore((s) => s.reset)
 
-  // No seat token → the player never joined/started this table here. Send them to
-  // the waiting room to (re)join.
   useEffect(() => {
-    if (!membership) router.push(`/table/${code}`)
-  }, [membership, code, router])
+    setMembershipValue(getMembership(code))
+    setResolved(true)
+  }, [code])
+
+  // Once resolved, no seat token → the player never joined/started this table here.
+  // Send them to the waiting room to (re)join.
+  useEffect(() => {
+    if (resolved && !membership) router.push(`/table/${code}`)
+  }, [resolved, membership, code, router])
 
   useEffect(() => {
     setMySeat(membership?.seat ?? null)
     return () => reset()
   }, [membership?.seat, setMySeat, reset])
 
-  if (!membership) return null
+  if (!resolved || !membership) return null
   return <ConnectedBoard code={code} seat={membership.seat} token={membership.wsToken} />
 }
 
@@ -66,6 +76,7 @@ function ConnectedBoard({ code, seat, token }: { code: string; seat: number; tok
       onBusinessSkip: () => actions.skipBusinessCenter(send),
       onPlayAgain: () => actions.newGame(send),
       onBackToLobby: () => router.push('/'),
+      onReact: (emoji: string) => actions.reaction(send, emoji),
     }),
     [send, router],
   )

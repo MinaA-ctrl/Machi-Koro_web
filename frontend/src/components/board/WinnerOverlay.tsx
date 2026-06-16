@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl'
 
+import { computeStandings } from '@/lib/scoring'
 import type { GameState } from '@/types/game'
 import { Button, Modal } from '@/components/ui'
 
@@ -23,6 +24,7 @@ export function WinnerOverlay({ state, mySeat, onPlayAgain, onBackToLobby }: Win
 
   const winner = state.players.find((p) => p.seat === state.winner)
   const iWon = mySeat != null && state.winner === mySeat
+  const standings = computeStandings(state)
 
   return (
     <Modal
@@ -43,12 +45,22 @@ export function WinnerOverlay({ state, mySeat, onPlayAgain, onBackToLobby }: Win
         </>
       }
     >
-      <ul className="space-y-1">
-        {state.players.map((p) => (
-          <li key={p.seat} className="flex items-center justify-between font-body text-sm">
-            <span>{p.name}</span>
-            <span className="text-on-surface-variant">
-              🏛 {p.landmarks.filter((lm) => lm.built).length} · 🪙 {p.coins}
+      <ul className="space-y-1.5">
+        {standings.map((s) => (
+          <li
+            key={s.seat}
+            className="flex items-center justify-between gap-3 rounded-lg bg-surface-container-low px-3 py-2 font-body text-sm"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="font-number font-bold text-on-surface-variant">{s.place}.</span>
+              <span className="truncate text-on-surface">
+                {s.name}
+                {s.isWinner && <span aria-hidden> 🏆</span>}
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-3 text-on-surface-variant">
+              <span>🏛 {s.built}</span>
+              <span className="font-number font-bold text-primary">{t('points', { points: s.points })}</span>
             </span>
           </li>
         ))}

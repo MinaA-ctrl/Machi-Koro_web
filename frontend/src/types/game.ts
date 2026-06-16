@@ -211,6 +211,11 @@ export interface PlayerRejoinedGameEvent {
   name: string
   seat: number
 }
+export interface PlayerJoinedGameEvent {
+  event: 'player_joined_game'
+  name: string
+  seat: number
+}
 
 export type GameWsEvent =
   | StateUpdateEvent
@@ -222,6 +227,7 @@ export type GameWsEvent =
   | ReactionEvent
   | PlayerLeftGameEvent
   | PlayerRejoinedGameEvent
+  | PlayerJoinedGameEvent
 
 // ── Lobby WS events (from lobby_ws) ──────────────────────────────────────────
 export interface LobbyPlayerJoinedEvent {

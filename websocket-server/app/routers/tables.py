@@ -15,7 +15,7 @@ from app.entitlements import can_host
 from app.ratelimit import create_limit
 from app.schemas import (
     CreateTableReq, CreateTableResp, JoinReq, JoinResp, KickReq, KickResp,
-    PlayerOut, RenameReq, RenameResp, StartResp, TableDetail, TableListItem,
+    PlayerOut, RenameReq, RenameResp, StartResp, StatsResp, TableDetail, TableListItem,
 )
 from persistence import repository as repo
 
@@ -127,6 +127,14 @@ async def list_tables(search: str = "", session: AsyncSession = Depends(get_sess
         )
         for t, count in rows
     ]
+
+
+# Declared before /{code} so "stats" isn't matched as a join code.
+@router.get("/stats", response_model=StatsResp)
+async def table_stats(session: AsyncSession = Depends(get_session)):
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=stale_waiting_min())
+    games, players = await repo.live_stats(session, cutoff)
+    return StatsResp(active_games=games, players_online=players)
 
 
 @router.get("/{code}", response_model=TableDetail)

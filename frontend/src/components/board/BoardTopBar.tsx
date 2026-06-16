@@ -1,10 +1,11 @@
 'use client'
 
+import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 
 import { cn } from '@/lib/cn'
 import type { GameState, Player } from '@/types/game'
-import { CoinChip } from '@/components/ui'
+import { Button, CoinChip, Modal } from '@/components/ui'
 import { LocaleSwitcher } from '@/components/LocaleSwitcher'
 
 interface BoardTopBarProps {
@@ -12,6 +13,8 @@ interface BoardTopBarProps {
   me: Player | undefined
   isMyTurn: boolean
   activeName: string
+  /** Leave the game and return to the lobby. */
+  onLeave: () => void
 }
 
 const PHASE_KEY: Record<string, 'phaseRoll' | 'phaseBuild' | 'phasePending'> = {
@@ -24,8 +27,9 @@ const PHASE_KEY: Record<string, 'phaseRoll' | 'phaseBuild' | 'phasePending'> = {
  * pill color tracks the phase (gold for build, felt for roll, clay for a pending
  * choice) so a glance tells you what the game is waiting on.
  */
-export function BoardTopBar({ state, me, isMyTurn, activeName }: BoardTopBarProps) {
+export function BoardTopBar({ state, me, isMyTurn, activeName, onLeave }: BoardTopBarProps) {
   const t = useTranslations('board')
+  const [confirmLeave, setConfirmLeave] = useState(false)
   const phaseKey = PHASE_KEY[state.phase] ?? 'phasePending'
 
   const pillTone =
@@ -62,7 +66,28 @@ export function BoardTopBar({ state, me, isMyTurn, activeName }: BoardTopBarProp
             <CoinChip value={me.coins} size="md" />
           </span>
         )}
+        <Button variant="ghost" size="sm" onClick={() => setConfirmLeave(true)}>
+          {t('leave')}
+        </Button>
       </div>
+
+      <Modal
+        open={confirmLeave}
+        onClose={() => setConfirmLeave(false)}
+        title={t('leaveConfirmTitle')}
+        actions={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmLeave(false)}>
+              {t('leaveCancel')}
+            </Button>
+            <Button variant="primary" onClick={onLeave}>
+              {t('leaveConfirm')}
+            </Button>
+          </>
+        }
+      >
+        <p>{t('leaveConfirmBody')}</p>
+      </Modal>
     </header>
   )
 }

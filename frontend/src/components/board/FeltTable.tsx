@@ -13,7 +13,12 @@ interface FeltTableProps {
   onRoll: (diceCount: 1 | 2) => void
   onEndTurn: () => void
   onTechInvest: () => void
+  /** Send an emoji reaction to the table. */
+  onReact: (emoji: string) => void
 }
+
+/** The quick-reaction palette shown on the right of the felt. */
+const REACTIONS = ['👍', '😂', '😮', '🎉', '😢', '🔥'] as const
 
 /**
  * The green felt play area — dice + the turn's primary action. In the roll phase
@@ -21,7 +26,7 @@ interface FeltTableProps {
  * Station); in the build phase they buy from the market or end their turn. Everyone
  * else sees whose move it is.
  */
-export function FeltTable({ state, me, isMyTurn, onRoll, onEndTurn, onTechInvest }: FeltTableProps) {
+export function FeltTable({ state, me, isMyTurn, onRoll, onEndTurn, onTechInvest, onReact }: FeltTableProps) {
   const t = useTranslations('board')
   const ownsTrainStation = !!me?.landmarks.some((lm) => lm.id === 'train_station' && lm.built)
   // Sharp Tech Startup: invest once per turn during your build phase while you own
@@ -34,8 +39,9 @@ export function FeltTable({ state, me, isMyTurn, onRoll, onEndTurn, onTechInvest
     (me?.coins ?? 0) >= 1
 
   return (
-    <div className="felt-panel mx-container-padding rounded-xl px-6 py-8">
-      <div className="flex flex-col items-center gap-6">
+    <div className="felt-panel relative mx-container-padding rounded-xl px-6 py-4">
+      {/* Play column — nudged left of centre so the reaction bar has room on the right. */}
+      <div className="flex flex-col items-center gap-4 sm:pr-24">
         <Dice dice={state.last_dice} />
 
         {state.phase === 'roll' && isMyTurn && (
@@ -75,6 +81,26 @@ export function FeltTable({ state, me, isMyTurn, onRoll, onEndTurn, onTechInvest
             {t('playerTurn', { name: playerName(state, state.active_seat) })}
           </p>
         )}
+      </div>
+
+      {/* Reaction bar — a compact 2-column grid pinned to the right of the felt, so
+          it stays inside the green without making the play area taller. */}
+      <div
+        className="absolute right-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-2"
+        role="group"
+        aria-label={t('reactions')}
+      >
+        {REACTIONS.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => onReact(emoji)}
+            aria-label={t('reactWith', { emoji })}
+            className="grid h-9 w-9 place-items-center rounded-full bg-surface-container-lowest/85 text-lg shadow-card transition-transform hover:scale-110 active:scale-95"
+          >
+            {emoji}
+          </button>
+        ))}
       </div>
     </div>
   )

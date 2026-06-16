@@ -20,7 +20,9 @@ import type {
   LoginReq,
   RegisterReq,
   RenameResp,
+  ScoreHistoryItem,
   StartResp,
+  StatsResp,
   TableDetail,
   TableListItem,
   TokenPair,
@@ -157,6 +159,11 @@ export const api = {
     return request<UserOut>('/auth/me')
   },
 
+  /** Finished-game history for the signed-in registered player. */
+  history(): Promise<ScoreHistoryItem[]> {
+    return request<ScoreHistoryItem[]>('/auth/me/history')
+  },
+
   // ── tables ──────────────────────────────────────────────────────────────
   createTable(req: CreateTableReq): Promise<CreateTableResp> {
     return request<CreateTableResp>('/tables', { method: 'POST', body: req })
@@ -172,6 +179,11 @@ export const api = {
 
   listTables(): Promise<TableListItem[]> {
     return request<TableListItem[]>('/tables')
+  },
+
+  /** Live lobby stats (active games + players online). Public, no auth needed. */
+  stats(): Promise<StatsResp> {
+    return request<StatsResp>('/tables/stats', { auth: false })
   },
 
   getTable(code: string): Promise<TableDetail> {

@@ -21,6 +21,7 @@ const NOOP_HANDLERS = {
   onBusinessSkip: noop,
   onPlayAgain: noop,
   onBackToLobby: noop,
+  onReact: noop,
 }
 
 /**

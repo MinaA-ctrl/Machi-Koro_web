@@ -14,7 +14,8 @@ interface MarketProps {
 }
 
 /**
- * The card market — a horizontal row of establishment cards. Each card knows
+ * The card market — establishment cards that wrap onto multiple rows to fit the
+ * market column (rather than scrolling off in a single row). Each card knows
  * whether it would activate on the current roll (badge highlight), how many copies
  * remain (`state.supply`), and whether the local player can buy it right now
  * (their turn · build phase · can afford · in stock). Server re-validates every buy.
@@ -45,11 +46,13 @@ export function Market({ state, me, isMyTurn, onBuy }: MarketProps) {
   }, [state.market])
 
   return (
-    <section aria-label={t('market')} className="px-container-padding">
+    <section aria-label={t('market')} className="flex flex-col px-container-padding lg:min-h-0 lg:flex-1">
       <h2 className="mb-2 font-label text-sm uppercase tracking-wide text-inverse-on-surface/80">
         {t('market')}
       </h2>
-      <div className="flex gap-card-gap overflow-x-auto pb-2">
+      {/* The cards wrap into rows and this box is the scroll zone — only the market
+          scrolls (on desktop), never the whole page. */}
+      <div className="flex flex-wrap content-start gap-card-gap pb-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {state.market.map((card) => {
           const remaining = state.supply[card.id] ?? 0
           const affordable = (me?.coins ?? 0) >= card.cost
