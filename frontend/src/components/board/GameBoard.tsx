@@ -12,6 +12,8 @@ import { useGameStore } from '@/store/game-store'
 import { PaperCard } from '@/components/ui'
 
 import { BoardView } from './BoardView'
+import { CoinGainNotifier } from './CoinGainNotifier'
+import { GameSounds } from './GameSounds'
 
 /**
  * Board orchestrator. Connects the game WebSocket using the per-seat token from
@@ -87,7 +89,13 @@ function ConnectedBoard({ code, seat, token }: { code: string; seat: number; tok
   // Only surface a prompt that targets this seat.
   const myPrompt = currentPrompt && currentPrompt.active_seat === seat ? currentPrompt : null
 
-  return <BoardView state={state} seat={seat} mySeat={mySeat} prompt={myPrompt} handlers={handlers} />
+  return (
+    <>
+      <CoinGainNotifier seat={seat} />
+      <GameSounds seat={seat} />
+      <BoardView state={state} seat={seat} mySeat={mySeat} prompt={myPrompt} handlers={handlers} />
+    </>
+  )
 }
 
 function CenterNotice({ text }: { text: string }) {

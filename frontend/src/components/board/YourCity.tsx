@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { useTranslations } from 'next-intl'
 
 import { cn } from '@/lib/cn'
@@ -9,7 +10,8 @@ import { diceLabel, symbolGlyph } from '@/lib/symbols'
 import type { GameState, Landmark, Player } from '@/types/game'
 import { CoinChip, DiceNumberBadge, PaperCard } from '@/components/ui'
 
-import { GameLog } from './GameLog'
+import { GameHistoryModal } from './GameHistoryModal'
+import { LandmarkInfoModal } from './LandmarkInfoModal'
 
 interface YourCityProps {
   state: GameState
@@ -26,6 +28,8 @@ interface YourCityProps {
 export function YourCity({ state, me, isMyTurn, onBuildLandmark }: YourCityProps) {
   const t = useTranslations('board')
   const cardName = useCardName()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [landmarkInfoOpen, setLandmarkInfoOpen] = useState(false)
   if (!me) return null
 
   const owned = Object.entries(me.cards)
@@ -40,8 +44,11 @@ export function YourCity({ state, me, isMyTurn, onBuildLandmark }: YourCityProps
     <aside className="flex h-full w-full flex-col gap-4">
       {/* Owned establishments */}
       <PaperCard className="flex min-h-0 flex-1 flex-col p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-heading text-headline-md text-on-surface">{t('yourCity')}</h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="font-heading text-headline-md text-on-surface">{t('yourCity')}</h2>
+            <CoinChip value={me.coins} size="md" />
+          </div>
           <span className="rounded-full bg-surface-container px-2 py-0.5 font-label text-xs text-on-surface-variant">
             {t('cardCount', { count: cardTotal })}
           </span>
@@ -71,11 +78,24 @@ export function YourCity({ state, me, isMyTurn, onBuildLandmark }: YourCityProps
         </ul>
       </PaperCard>
 
-      {/* Milestones (landmarks) */}
+      {/* Landmarks */}
       <PaperCard className="p-4">
-        <h3 className="mb-2 font-label text-sm uppercase tracking-wide text-on-surface-variant">
-          {t('milestones')}
-        </h3>
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="font-label text-sm uppercase tracking-wide text-on-surface-variant">
+            {t('milestones')}
+          </h3>
+          {/* List button → opens a reference dialog describing each landmark. */}
+          <button
+            type="button"
+            onClick={() => setLandmarkInfoOpen(true)}
+            aria-label={t('landmarkInfo')}
+            className="grid h-7 w-7 place-items-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <span aria-hidden className="text-base leading-none">
+              📋
+            </span>
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-2">
           {me.landmarks.map((lm) => (
             <Milestone
@@ -88,10 +108,25 @@ export function YourCity({ state, me, isMyTurn, onBuildLandmark }: YourCityProps
         </div>
       </PaperCard>
 
-      {/* Log — localized from keyed events */}
-      <PaperCard className="max-h-28 overflow-y-auto p-3">
-        <GameLog state={state} />
-      </PaperCard>
+      {/* History — collapsed by default; the toggle opens the full log in a modal. */}
+      <button
+        type="button"
+        onClick={() => setHistoryOpen(true)}
+        aria-label={t('openHistory')}
+        className="flex items-center justify-between rounded-xl bg-surface-container-low px-4 py-2.5 font-label text-sm text-on-surface shadow-card transition-colors hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <span>{t('history')}</span>
+        <span aria-hidden className="text-lg leading-none text-on-surface-variant">
+          ‹
+        </span>
+      </button>
+
+      <GameHistoryModal open={historyOpen} onClose={() => setHistoryOpen(false)} state={state} />
+      <LandmarkInfoModal
+        open={landmarkInfoOpen}
+        onClose={() => setLandmarkInfoOpen(false)}
+        landmarks={me.landmarks}
+      />
     </aside>
   )
 }

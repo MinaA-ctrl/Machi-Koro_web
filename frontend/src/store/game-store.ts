@@ -20,12 +20,15 @@ interface GameStore {
   currentPrompt: GamePrompt | null
   /** Bumped on each coin_event so a player's coin chip can pulse. */
   coinPulse: Record<number, number>
+  /** Latest emoji reaction per seat — rendered as a transient bubble over the avatar. */
+  reactions: Record<number, { emoji: string; ts: number }>
 
   setState: (state: GameState) => void
   setConnectedCount: (n: number) => void
   setMySeat: (seat: number | null) => void
   setPrompt: (prompt: GamePrompt | null) => void
   pulseCoins: (seats: number[]) => void
+  pushReaction: (seat: number, emoji: string) => void
   reset: () => void
 }
 
@@ -35,6 +38,7 @@ export const useGameStore = create<GameStore>((set) => ({
   mySeat: null,
   currentPrompt: null,
   coinPulse: {},
+  reactions: {},
 
   setState: (state) =>
     set((s) => {
@@ -52,5 +56,8 @@ export const useGameStore = create<GameStore>((set) => ({
       for (const seat of seats) next[seat] = (next[seat] ?? 0) + 1
       return { coinPulse: next }
     }),
-  reset: () => set({ state: null, connectedCount: 0, coinPulse: {}, currentPrompt: null }),
+  pushReaction: (seat, emoji) =>
+    set((s) => ({ reactions: { ...s.reactions, [seat]: { emoji, ts: Date.now() } } })),
+  reset: () =>
+    set({ state: null, connectedCount: 0, coinPulse: {}, currentPrompt: null, reactions: {} }),
 }))

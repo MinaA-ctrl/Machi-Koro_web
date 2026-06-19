@@ -9,7 +9,6 @@ import { Button, Modal } from '@/components/ui'
 interface WinnerOverlayProps {
   state: GameState
   mySeat: number | null
-  onPlayAgain: () => void
   onBackToLobby: () => void
 }
 
@@ -18,7 +17,7 @@ interface WinnerOverlayProps {
  * `state.winner`. Offers a rematch at the same table (`new_game`, which the backend
  * only honors with 2+ players connected) or a return to the lobby.
  */
-export function WinnerOverlay({ state, mySeat, onPlayAgain, onBackToLobby }: WinnerOverlayProps) {
+export function WinnerOverlay({ state, mySeat, onBackToLobby }: WinnerOverlayProps) {
   const t = useTranslations('board')
   if (state.phase !== 'finished' || state.winner == null) return null
 
@@ -37,12 +36,9 @@ export function WinnerOverlay({ state, mySeat, onPlayAgain, onBackToLobby }: Win
         </span>
       }
       actions={
-        <>
-          <Button variant="ghost" onClick={onBackToLobby}>
-            {t('backToLobby')}
-          </Button>
-          <Button onClick={onPlayAgain}>{t('playAgain')}</Button>
-        </>
+        <Button variant="primary" onClick={onBackToLobby}>
+          {t('backToLobby')}
+        </Button>
       }
     >
       <ul className="space-y-1.5">

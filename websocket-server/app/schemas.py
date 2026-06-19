@@ -144,4 +144,12 @@ class ScoreHistoryItem(BaseModel):
     won: bool
     landmarks_built: int
     coins_at_end: int
+    points: int = 0
     played_at: datetime
+
+
+class UserStats(BaseModel):
+    """Lifetime aggregates for the signed-in registered player."""
+    total_points: int = 0
+    games_played: int = 0
+    games_won: int = 0

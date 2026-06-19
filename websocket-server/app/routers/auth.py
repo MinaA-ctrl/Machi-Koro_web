@@ -16,6 +16,7 @@ from app.deps import clean_name, get_session
 from app.ratelimit import auth_limit
 from app.schemas import (
     GuestReq, LoginReq, RefreshReq, RegisterReq, ScoreHistoryItem, TokenPair, UserOut,
+    UserStats,
 )
 from persistence import repository as repo
 
@@ -38,9 +39,22 @@ def _user_out(user) -> UserOut:
 
 @router.post("/register", response_model=TokenPair, status_code=201, dependencies=[Depends(auth_limit)])
 async def register(req: RegisterReq, session: AsyncSession = Depends(get_session)):
+    # One account per email (exact match — different casing can be a different mail).
     if await repo.get_user_by_email(session, req.email):
         raise HTTPException(409, "Email already registered")
+    # Registered display names must be unique (two people can't share a name). If the
+    # user TYPED a name that's taken, ask them to change it ("name_taken"); if the name
+    # was auto-derived from their email and happens to clash, silently disambiguate so
+    # registration still succeeds.
+    provided = bool((req.display_name or "").strip())
     display = clean_name(req.display_name, 64, default=req.email.split("@")[0])
+    if await repo.registered_display_name_taken(session, display):
+        if provided:
+            raise HTTPException(409, "name_taken")
+        base, n = display, 2
+        while await repo.registered_display_name_taken(session, display):
+            display = f"{base}{n}"[:64]
+            n += 1
     user = await repo.create_user(
         session, kind="registered", display_name=display, email=req.email,
         password_hash=hash_password(req.password), language=req.language,
@@ -105,7 +119,20 @@ async def my_history(
             won=score.won,
             landmarks_built=score.landmarks_built,
             coins_at_end=score.coins_at_end,
+            points=score.points,
             played_at=score.played_at,
         )
         for score, name, version in rows
     ]
+
+
+@router.get("/me/stats", response_model=UserStats)
+async def my_stats(
+    identity: str = Depends(current_identity), session: AsyncSession = Depends(get_session)
+):
+    """Lifetime point total + games played/won for the signed-in registered player.
+    Guests have no stats (all zeros)."""
+    kind, user_id = parse_identity(identity)
+    if kind != "user":
+        return UserStats()
+    return UserStats(**await repo.stats_for_user(session, user_id))

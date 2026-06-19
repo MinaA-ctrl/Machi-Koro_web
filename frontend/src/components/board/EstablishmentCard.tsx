@@ -1,7 +1,7 @@
 'use client'
 
 import { cn } from '@/lib/cn'
-import { useCardName } from '@/lib/i18n-names'
+import { useCardEffect, useCardName } from '@/lib/i18n-names'
 import { diceLabel, symbolGlyph } from '@/lib/symbols'
 import type { CardDef } from '@/types/game'
 import { CoinChip, DiceNumberBadge, FamilyBand, PaperCard } from '@/components/ui'
@@ -38,12 +38,16 @@ export function EstablishmentCard({
   const soldOut = remaining === 0
   const interactive = buyable && !soldOut
   const cardName = useCardName()
+  const cardEffect = useCardEffect()
 
   return (
     <PaperCard
       className={cn(
-        'flex w-36 shrink-0 flex-col overflow-hidden transition-transform [transform-style:preserve-3d]',
-        interactive && 'cursor-pointer hover:-translate-y-1 hover:shadow-card-hover active:translate-y-0 active:shadow-card-press',
+        'group relative flex w-36 shrink-0 flex-col overflow-hidden transition-transform [transform-style:preserve-3d]',
+        // Grow ~10% on hover/focus so the card is easier to read (and the full name
+        // un-truncates, below); raise it above neighbours while enlarged.
+        'hover:z-20 hover:scale-110 focus-within:z-20 focus-within:scale-110',
+        interactive && 'cursor-pointer hover:shadow-card-hover active:scale-100 active:shadow-card-press',
         soldOut && 'opacity-45 saturate-50',
         revealing && 'animate-card-reveal',
       )}
@@ -63,8 +67,17 @@ export function EstablishmentCard({
       }
     >
       <FamilyBand type={card.type}>
-        <span className="truncate">{cardName(card.id, card.name)}</span>
-        <DiceNumberBadge value={diceLabel(card.dice)} active={activeOnRoll} />
+        {/* Truncate by default so long names (Farmers Market, Food Warehouse,
+            Family Restaurant) keep the name + activation badge on one row;
+            `min-w-0` lets the flex item actually shrink. On hover/focus the card
+            is enlarged and the name un-truncates so the whole name is visible. */}
+        <span
+          title={cardName(card.id, card.name)}
+          className="min-w-0 truncate group-hover:overflow-visible group-hover:whitespace-normal group-focus-within:overflow-visible group-focus-within:whitespace-normal"
+        >
+          {cardName(card.id, card.name)}
+        </span>
+        <DiceNumberBadge value={diceLabel(card.dice)} active={activeOnRoll} className="shrink-0" />
       </FamilyBand>
 
       <div className="flex flex-1 flex-col gap-1 p-2">
@@ -89,7 +102,7 @@ export function EstablishmentCard({
             ))}
         </div>
         <p className="line-clamp-3 font-body text-[11px] leading-snug text-on-surface-variant">
-          {card.effect}
+          {cardEffect(card.id, card.effect)}
         </p>
         <div className="mt-auto flex justify-end pt-1">
           <CoinChip value={card.cost} size="sm" />

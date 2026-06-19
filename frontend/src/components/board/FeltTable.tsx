@@ -83,10 +83,11 @@ export function FeltTable({ state, me, isMyTurn, onRoll, onEndTurn, onTechInvest
         )}
       </div>
 
-      {/* Reaction bar — a compact 2-column grid pinned to the right of the felt, so
-          it stays inside the green without making the play area taller. */}
+      {/* Reaction bar. On phones it flows as a centered wrapped row UNDER the dice/
+          actions (no overlap); from `sm` up it's a 2-column grid pinned to the right
+          of the felt (the play column reserves space via `sm:pr-24`). */}
       <div
-        className="absolute right-3 top-1/2 grid -translate-y-1/2 grid-cols-2 gap-2"
+        className="mt-4 flex flex-wrap justify-center gap-2 sm:absolute sm:right-3 sm:top-1/2 sm:mt-0 sm:grid sm:-translate-y-1/2 sm:grid-cols-2"
         role="group"
         aria-label={t('reactions')}
       >

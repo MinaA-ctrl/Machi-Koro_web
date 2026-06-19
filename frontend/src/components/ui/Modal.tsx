@@ -15,6 +15,8 @@ interface ModalProps {
   actions?: ReactNode
   /** Disable closing on backdrop click / Escape (for blocking overlays). */
   dismissable?: boolean
+  /** Render an ✕ close button in the top-right corner. */
+  showClose?: boolean
   className?: string
 }
 
@@ -31,6 +33,7 @@ export function Modal({
   children,
   actions,
   dismissable = true,
+  showClose = false,
   className,
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -112,8 +115,20 @@ export function Modal({
           className,
         )}
       >
+        {showClose && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute right-3 top-3 grid h-8 w-8 place-items-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <span aria-hidden className="text-lg leading-none">
+              ✕
+            </span>
+          </button>
+        )}
         {title && (
-          <h2 id={titleId} className="mb-3 font-heading text-headline-md text-on-surface">
+          <h2 id={titleId} className="mb-3 pr-8 font-heading text-headline-md text-on-surface">
             {title}
           </h2>
         )}

@@ -11,7 +11,7 @@ export const actions = {
 
   /** Buy an establishment from the market. */
   buyEstablishment: (send: Send, id: string) =>
-    send({ event: 'build', type: 'establishment', id }),
+    send({ event: 'build', type: 'card', id }),
 
   /** Build a landmark. */
   buildLandmark: (send: Send, id: string) => send({ event: 'build', type: 'landmark', id }),

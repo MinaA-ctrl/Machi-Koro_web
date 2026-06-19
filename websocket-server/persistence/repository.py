@@ -21,7 +21,7 @@ from typing import Optional
 import secrets
 from datetime import datetime
 
-from sqlalchemy import and_, delete, exists, func, or_, select, update
+from sqlalchemy import Integer, and_, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -108,6 +108,16 @@ async def save_scores(
     )
     place_by_seat = {p["seat"]: i + 1 for i, p in enumerate(standings)}
 
+    # Final score (matches the frontend `computeStandings`): 2× the cost of each
+    # opened landmark (City Hall excluded — it's pre-built) + leftover coins +
+    # a finishing-place bonus (1st +40, 2nd +25, 3rd +10).
+    place_bonus = {1: 40, 2: 25, 3: 10}
+
+    def score_points(p: dict) -> int:
+        opened = [lm for lm in p["landmarks"] if lm["built"] and lm["id"] != "city_hall"]
+        base = sum(lm.get("cost", 0) * 2 for lm in opened) + p["coins"]
+        return base + place_bonus.get(place_by_seat[p["seat"]], 0)
+
     rows = []
     for p in players:
         user_id = p.get("user_id")
@@ -122,6 +132,7 @@ async def save_scores(
                 "game_seq": game_seq,
                 "landmarks_built": built(p),
                 "coins_at_end": p["coins"],
+                "points": score_points(p),
                 "won": p["seat"] == winner,
                 "place": place_by_seat[p["seat"]],
                 "total_players": total_players,
@@ -136,6 +147,7 @@ async def save_scores(
         set_={
             "landmarks_built": stmt.excluded.landmarks_built,
             "coins_at_end": stmt.excluded.coins_at_end,
+            "points": stmt.excluded.points,
             "won": stmt.excluded.won,
             "place": stmt.excluded.place,
             "total_players": stmt.excluded.total_players,
@@ -159,6 +171,22 @@ async def history_for_user(session: AsyncSession, user_id: int, limit: int = 50)
     )
     rows = await session.execute(stmt)
     return rows.all()
+
+
+async def stats_for_user(session: AsyncSession, user_id: int) -> dict:
+    """Lifetime aggregates for a registered player: total points across every
+    finished game, games played, and games won. Empty history → all zeros."""
+    stmt = select(
+        func.coalesce(func.sum(Score.points), 0),
+        func.count(Score.id),
+        func.coalesce(func.sum(cast(Score.won, Integer)), 0),
+    ).where(Score.user_id == user_id)
+    total_points, games_played, games_won = (await session.execute(stmt)).one()
+    return {
+        "total_points": int(total_points),
+        "games_played": int(games_played),
+        "games_won": int(games_won),
+    }
 
 
 # ── Table / player writes (S2.3 — used by the REST surface) ──────────────────
@@ -309,6 +337,20 @@ async def delete_waiting_table(session: AsyncSession, join_code: str) -> bool:
     return True
 
 
+async def finish_table(session: AsyncSession, join_code: str) -> bool:
+    """Retire a completed table once its game is over AND all players have left:
+    flip 'playing' → 'finished' so it stops counting toward active games / players
+    online (live_stats only counts 'playing' + fresh 'waiting'). The row is KEPT —
+    scores cascade-delete with their table, so the player history/points we persisted
+    must outlive the game. No-op unless the table is currently 'playing'."""
+    table = await get_table(session, join_code)
+    if not table or table.status != "playing":
+        return False
+    table.status = "finished"
+    await session.commit()
+    return True
+
+
 async def remove_waiting_player(session: AsyncSession, join_code: str, seat: int) -> bool:
     """Remove a player from a still-waiting table. No-op once started. Mirrors
     main.py's _remove_waiting_player (a non-host left the lobby)."""
@@ -373,7 +415,22 @@ async def get_user(session: AsyncSession, user_id: int) -> Optional[User]:
 
 
 async def get_user_by_email(session: AsyncSession, email: str) -> Optional[User]:
+    """Exact (case-sensitive) email lookup — different casing is treated as a
+    different address, so it can be a separate account. Used by register + login."""
     return await session.scalar(select(User).where(User.email == email))
+
+
+async def registered_display_name_taken(session: AsyncSession, display_name: str) -> bool:
+    """True if a REGISTERED account already uses this display name (case-insensitive).
+    Guests are ignored — only registered identities must be unique, so two people
+    can't sign up under the same name."""
+    norm = display_name.strip().lower()
+    return bool(await session.scalar(
+        select(User.id).where(
+            User.kind == "registered",
+            func.lower(User.display_name) == norm,
+        )
+    ))
 
 
 # ── Entitlements / wallet (S2.5 — monetization seam, free by default) ─────────

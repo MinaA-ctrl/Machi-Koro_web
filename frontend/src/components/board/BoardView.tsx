@@ -61,7 +61,6 @@ export function BoardView({ state, seat, mySeat, prompt, handlers }: BoardViewPr
     <div className="flex min-h-screen flex-col pb-6 lg:h-screen lg:min-h-0 lg:overflow-hidden lg:pb-0">
       <BoardTopBar
         state={state}
-        me={me}
         isMyTurn={isMyTurn}
         activeName={activeName}
         onLeave={handlers.onBackToLobby}
@@ -99,12 +98,7 @@ export function BoardView({ state, seat, mySeat, prompt, handlers }: BoardViewPr
           onBusinessSkip: handlers.onBusinessSkip,
         }}
       />
-      <WinnerOverlay
-        state={state}
-        mySeat={mySeat}
-        onPlayAgain={handlers.onPlayAgain}
-        onBackToLobby={handlers.onBackToLobby}
-      />
+      <WinnerOverlay state={state} mySeat={mySeat} onBackToLobby={handlers.onBackToLobby} />
     </div>
   )
 }

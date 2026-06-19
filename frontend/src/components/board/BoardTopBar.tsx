@@ -1,16 +1,16 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslations } from 'next-intl'
 
 import { cn } from '@/lib/cn'
-import type { GameState, Player } from '@/types/game'
-import { Button, CoinChip, Modal } from '@/components/ui'
+import { isMuted, setMuted, unlockAudio } from '@/lib/sound'
+import type { GameState } from '@/types/game'
+import { Button, Modal } from '@/components/ui'
 import { LocaleSwitcher } from '@/components/LocaleSwitcher'
 
 interface BoardTopBarProps {
   state: GameState
-  me: Player | undefined
   isMyTurn: boolean
   activeName: string
   /** Leave the game and return to the lobby. */
@@ -27,10 +27,21 @@ const PHASE_KEY: Record<string, 'phaseRoll' | 'phaseBuild' | 'phasePending'> = {
  * pill color tracks the phase (gold for build, felt for roll, clay for a pending
  * choice) so a glance tells you what the game is waiting on.
  */
-export function BoardTopBar({ state, me, isMyTurn, activeName, onLeave }: BoardTopBarProps) {
+export function BoardTopBar({ state, isMyTurn, activeName, onLeave }: BoardTopBarProps) {
   const t = useTranslations('board')
   const [confirmLeave, setConfirmLeave] = useState(false)
+  // Read the persisted mute preference after mount (localStorage is client-only, so
+  // starting `false` keeps the server/first-client render in agreement).
+  const [muted, setMutedState] = useState(false)
+  useEffect(() => setMutedState(isMuted()), [])
   const phaseKey = PHASE_KEY[state.phase] ?? 'phasePending'
+
+  const toggleSound = () => {
+    const next = !muted
+    setMuted(next)
+    setMutedState(next)
+    if (!next) unlockAudio()
+  }
 
   const pillTone =
     state.phase === 'build'
@@ -41,7 +52,7 @@ export function BoardTopBar({ state, me, isMyTurn, activeName, onLeave }: BoardT
 
   return (
     <header className="flex flex-wrap items-center gap-3 px-container-padding py-3">
-      <span className="font-display text-headline-md font-semibold text-primary-container">
+      <span className="hidden font-display text-headline-md font-semibold text-primary-container sm:inline">
         Machi&nbsp;Koro
       </span>
 
@@ -60,12 +71,16 @@ export function BoardTopBar({ state, me, isMyTurn, activeName, onLeave }: BoardT
       </span>
 
       <div className="ml-auto flex items-center gap-3">
+        <button
+          type="button"
+          onClick={toggleSound}
+          aria-label={muted ? t('soundOn') : t('soundOff')}
+          aria-pressed={!muted}
+          className="grid h-9 w-9 place-items-center rounded-full bg-surface-container text-lg shadow-card transition-transform hover:scale-105"
+        >
+          <span aria-hidden>{muted ? '🔇' : '🔊'}</span>
+        </button>
         <LocaleSwitcher />
-        {me && (
-          <span className="flex items-center gap-1.5 rounded-full bg-surface-container px-2 py-1 shadow-card">
-            <CoinChip value={me.coins} size="md" />
-          </span>
-        )}
         <Button variant="ghost" size="sm" onClick={() => setConfirmLeave(true)}>
           {t('leave')}
         </Button>

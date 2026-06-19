@@ -27,6 +27,7 @@ import type {
   TableListItem,
   TokenPair,
   UserOut,
+  UserStats,
 } from '@/types/api'
 import {
   clearTokens,
@@ -162,6 +163,11 @@ export const api = {
   /** Finished-game history for the signed-in registered player. */
   history(): Promise<ScoreHistoryItem[]> {
     return request<ScoreHistoryItem[]>('/auth/me/history')
+  },
+
+  /** Lifetime point total + games played/won for the signed-in registered player. */
+  myStats(): Promise<UserStats> {
+    return request<UserStats>('/auth/me/stats')
   },
 
   // ── tables ──────────────────────────────────────────────────────────────

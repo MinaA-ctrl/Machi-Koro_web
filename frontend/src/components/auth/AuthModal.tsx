@@ -1,6 +1,6 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocale, useTranslations } from 'next-intl'
 import { useState } from 'react'
 
@@ -36,18 +36,36 @@ export function AuthModal({
   const { show } = useToast()
   const registered = account?.kind === 'registered'
 
+  // Lifetime point total for the signed-in player (account view only).
+  const { data: stats } = useQuery({
+    queryKey: ['myStats'],
+    queryFn: () => api.myStats(),
+    enabled: open && registered,
+    staleTime: 30_000,
+  })
+
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // True when registration failed because the email already has an account — we then
+  // offer a one-tap switch to the log-in form (email stays prefilled).
+  const [emailExists, setEmailExists] = useState(false)
 
   function reset() {
     setEmail('')
     setPassword('')
     setName('')
     setError(null)
+    setEmailExists(false)
+  }
+
+  function switchMode(next: 'login' | 'register') {
+    setMode(next)
+    setError(null)
+    setEmailExists(false)
   }
 
   function close() {
@@ -59,6 +77,7 @@ export function AuthModal({
     if (busy || !email.trim() || !password) return
     setBusy(true)
     setError(null)
+    setEmailExists(false)
     try {
       if (mode === 'register') {
         await api.register({
@@ -74,8 +93,13 @@ export function AuthModal({
       show(t(mode === 'register' ? 'registered' : 'loggedIn'), 'success')
       close()
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) setError(t('emailTaken'))
-      else if (err instanceof ApiError && err.status === 401) setError(t('badCredentials'))
+      if (err instanceof ApiError && err.status === 409) {
+        // The backend distinguishes a clashing display name from a taken email; the
+        // latter offers a jump to log in (the account already exists).
+        const nameTaken = err.detail === 'name_taken'
+        setError(nameTaken ? t('nameTaken') : t('emailExists'))
+        setEmailExists(!nameTaken)
+      } else if (err instanceof ApiError && err.status === 401) setError(t('badCredentials'))
       else setError(tt('networkError'))
     } finally {
       setBusy(false)
@@ -118,6 +142,17 @@ export function AuthModal({
         </p>
         {account.email && (
           <p className="mt-1 font-body text-sm text-on-surface-variant">{account.email}</p>
+        )}
+        <div className="mt-4 flex items-center justify-between rounded-lg bg-surface-container-low px-3 py-2.5">
+          <span className="font-label text-sm text-on-surface-variant">{t('totalPoints')}</span>
+          <span className="font-number text-body-lg font-bold text-primary">
+            {stats?.total_points ?? 0}
+          </span>
+        </div>
+        {stats != null && stats.games_played > 0 && (
+          <p className="mt-1.5 text-right font-body text-xs text-on-surface-variant">
+            {t('gamesSummary', { played: stats.games_played, won: stats.games_won })}
+          </p>
         )}
       </Modal>
     )
@@ -171,14 +206,24 @@ export function AuthModal({
           aria-label={t('password')}
           className={INPUT}
         />
-        {error && <p className="font-body text-sm text-error">{error}</p>}
+        {error && (
+          <div className="space-y-1">
+            <p className="font-body text-sm text-error">{error}</p>
+            {emailExists && (
+              <button
+                type="button"
+                className="font-label text-sm font-medium text-primary underline-offset-2 hover:underline"
+                onClick={() => switchMode('login')}
+              >
+                {t('goToLogin')}
+              </button>
+            )}
+          </div>
+        )}
         <button
           type="button"
           className="font-label text-sm text-primary underline-offset-2 hover:underline"
-          onClick={() => {
-            setMode(mode === 'login' ? 'register' : 'login')
-            setError(null)
-          }}
+          onClick={() => switchMode(mode === 'login' ? 'register' : 'login')}
         >
           {mode === 'login' ? t('needAccount') : t('haveAccount')}
         </button>

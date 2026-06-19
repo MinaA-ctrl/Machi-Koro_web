@@ -125,7 +125,14 @@ export interface ScoreHistoryItem {
   won: boolean
   landmarks_built: number
   coins_at_end: number
+  points: number
   played_at: string
+}
+
+export interface UserStats {
+  total_points: number
+  games_played: number
+  games_won: number
 }
 
 /** Error envelope — FastAPI returns `{ detail: ... }`. */

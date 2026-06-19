@@ -25,13 +25,16 @@ export function AppHeader() {
   return (
     <header className="flex items-center justify-between px-container-padding py-4">
       <Link
-        href="/"
+        href="/landing"
         className="font-display text-headline-lg font-semibold text-primary-container drop-shadow-[0_1px_0_rgba(98,72,0,0.35)]"
       >
         Machi&nbsp;Koro
       </Link>
       <div className="flex items-center gap-3">
         <LocaleSwitcher />
+        {/* Logs + name are desktop-only; the account avatar is ALWAYS shown so the
+            sign-in / account dialog is reachable on phones too (it used to live inside
+            the `hidden sm:flex` nav, which hid login entirely on mobile). */}
         <nav className="hidden items-center gap-4 font-label text-sm text-on-surface-variant sm:flex">
           <button type="button" className="hover:text-on-surface" onClick={() => setLogsOpen(true)}>
             {t('logs')}
@@ -39,15 +42,15 @@ export function AppHeader() {
           {registered && account && (
             <span className="font-label text-sm text-on-surface">{account.display_name}</span>
           )}
-          <button
-            type="button"
-            aria-label={t('account')}
-            onClick={() => setAuthOpen(true)}
-            className="grid h-9 w-9 place-items-center rounded-full bg-surface-container shadow-card transition-transform hover:scale-105"
-          >
-            <span aria-hidden>👤</span>
-          </button>
         </nav>
+        <button
+          type="button"
+          aria-label={t('account')}
+          onClick={() => setAuthOpen(true)}
+          className="grid h-9 w-9 place-items-center rounded-full bg-surface-container shadow-card transition-transform hover:scale-105"
+        >
+          <span aria-hidden>👤</span>
+        </button>
       </div>
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} account={account} />

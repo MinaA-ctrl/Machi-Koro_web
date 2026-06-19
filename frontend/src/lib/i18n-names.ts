@@ -13,3 +13,15 @@ export function useCardName() {
   return (id: string, fallback?: string): string =>
     t.has(id) ? t(id) : (fallback ?? id)
 }
+
+/**
+ * Localized card/landmark EFFECT (rules) text by id, from the `cardEffects` catalog.
+ * Falls back to the engine's English `card_defs[id].effect` for any id missing from
+ * the catalog, so an un-translated card still shows its English description rather
+ * than nothing.
+ */
+export function useCardEffect() {
+  const t = useTranslations('cardEffects')
+  return (id: string, fallback?: string): string =>
+    t.has(id) ? t(id) : (fallback ?? id)
+}

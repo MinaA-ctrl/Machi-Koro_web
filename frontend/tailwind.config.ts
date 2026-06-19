@@ -190,6 +190,14 @@ const config: Config = {
           '60%': { opacity: '1' },
           '100%': { opacity: '1', transform: 'rotateY(0deg) scale(1)' },
         },
+        // Emoji reaction bubble: pops in over the avatar, then gently drifts up.
+        'reaction-pop': {
+          '0%': { opacity: '0', transform: 'translate(-50%, 6px) scale(0.5)' },
+          '20%': { opacity: '1', transform: 'translate(-50%, 0) scale(1.1)' },
+          '35%': { transform: 'translate(-50%, 0) scale(1)' },
+          '85%': { opacity: '1' },
+          '100%': { opacity: '0', transform: 'translate(-50%, -6px) scale(1)' },
+        },
       },
       animation: {
         'toast-in': 'toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -198,6 +206,7 @@ const config: Config = {
         'dice-tumble': 'dice-tumble 600ms cubic-bezier(0.34, 1.2, 0.64, 1)',
         'coin-pop': 'coin-pop 900ms ease-out forwards',
         'card-reveal': 'card-reveal 450ms cubic-bezier(0.22, 1, 0.36, 1)',
+        'reaction-pop': 'reaction-pop 3500ms ease-out forwards',
       },
     },
   },

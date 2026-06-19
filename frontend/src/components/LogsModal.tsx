@@ -68,8 +68,10 @@ export function LogsModal({
                   {versionLabel(h.game_version)}
                 </p>
               </div>
-              <span className="shrink-0 font-number text-sm text-on-surface-variant">
-                🏛 {h.landmarks_built} · 🪙 {h.coins_at_end}
+              <span className="flex shrink-0 items-center gap-2 font-number text-sm text-on-surface-variant">
+                <span>🏛 {h.landmarks_built}</span>
+                <span>🪙 {h.coins_at_end}</span>
+                <span className="font-bold text-primary">{t('points', { points: h.points ?? 0 })}</span>
               </span>
             </li>
           ))}

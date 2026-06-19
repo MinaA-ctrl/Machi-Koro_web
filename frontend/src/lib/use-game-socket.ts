@@ -28,6 +28,7 @@ export function useGameSocket(
   const setConnectedCount = useGameStore((s) => s.setConnectedCount)
   const setPrompt = useGameStore((s) => s.setPrompt)
   const pulseCoins = useGameStore((s) => s.pulseCoins)
+  const pushReaction = useGameStore((s) => s.pushReaction)
   const socketRef = useRef<Socket | null>(null)
   const [status, setStatus] = useState<'connecting' | 'open' | 'closed'>('connecting')
 
@@ -69,15 +70,11 @@ export function useGameSocket(
           case 'player_rejoined_game':
             if (event.seat !== seat) show(`${event.name} rejoined`, 'success')
             break
-          case 'reaction': {
-            // Show others' reactions (skip the echo of my own).
-            if (event.seat === seat) break
-            const name = useGameStore
-              .getState()
-              .state?.players.find((p) => p.seat === event.seat)?.name
-            show(name ? `${event.emoji} ${name}` : event.emoji, 'info')
+          case 'reaction':
+            // Render as a transient thought-bubble over the reacting player's
+            // avatar (the OpponentsStrip reads `reactions[seat]`), not a toast.
+            pushReaction(event.seat, event.emoji)
             break
-          }
           default:
             break
         }
@@ -88,7 +85,7 @@ export function useGameSocket(
       socket.close()
       socketRef.current = null
     }
-  }, [code, seat, token, setState, setConnectedCount, setPrompt, pulseCoins, show])
+  }, [code, seat, token, setState, setConnectedCount, setPrompt, pulseCoins, pushReaction, show])
 
   return {
     send: (data: unknown) => socketRef.current?.send(data),

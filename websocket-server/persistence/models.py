@@ -193,6 +193,8 @@ class Score(Base):
     game_seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     landmarks_built: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     coins_at_end: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Final score: 2× opened-landmark cost + leftover coins + finishing-place bonus.
+    points: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     won: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Finishing place (1 = winner) and table size, from the full final standings.
     place: Mapped[int | None] = mapped_column(Integer, nullable=True)

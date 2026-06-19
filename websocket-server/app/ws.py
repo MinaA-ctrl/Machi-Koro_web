@@ -339,6 +339,26 @@ async def _remove_waiting_player(code: str, seat: int) -> None:
         print(f"[lobby] failed to remove player seat={seat} from table {code}: {e}")
 
 
+async def _finish_table(code: str) -> None:
+    """Retire a finished, emptied game's table so it stops counting as active."""
+    try:
+        async with async_session() as session:
+            await repo.finish_table(session, code)
+    except Exception as e:
+        print(f"[game] failed to retire finished table {code}: {e}")
+
+
+async def _delayed_finish_table(code: str, delay: int = 15) -> None:
+    """After a short grace window, retire a finished table whose players have all
+    left (active games / players online both drop). Re-checks emptiness first so a
+    quick reconnect to the results screen cancels the retirement — the table stays
+    'playing' (rehydratable) until everyone is really gone. Scores are preserved."""
+    await asyncio.sleep(delay)
+    if game_rooms.get(code):  # someone (re)connected during the grace window
+        return
+    await _finish_table(code)
+
+
 # ── Game WebSocket ─────────────────────────────────────────────────────────────
 
 @router.websocket("/ws/{code}/game/{seat}")
@@ -473,12 +493,20 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
             task.add_done_callback(_log_task_exception)
 
         if not game_rooms.get(code):
+            # The room emptied. If the game had finished, retire its table (after a
+            # grace window) so it stops counting toward active games / players online
+            # — but ONLY once all players have left. A mid-game walkout is left to the
+            # idle reaper (abandon_idle_playing), not retired here.
+            was_finished = code in game_states and game_states[code].get("phase") == "finished"
             game_states.pop(code, None)
             game_rooms.pop(code, None)
             game_joined.pop(code, None)
             _state_locks.pop(code, None)
             _cancel_prompt_timer(code)
             _prompt_tokens.pop(code, None)
+            if was_finished:
+                task = asyncio.create_task(_delayed_finish_table(code))
+                task.add_done_callback(_log_task_exception)
 
 
 async def _delayed_auto_win(code: str, seat: int, delay: int = 15) -> None:

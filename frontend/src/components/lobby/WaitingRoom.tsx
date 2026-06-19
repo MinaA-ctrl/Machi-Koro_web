@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTranslations } from 'next-intl'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useRouter } from '@/i18n/navigation'
 import { ApiError, api } from '@/lib/api'
@@ -14,6 +14,7 @@ import {
 } from '@/lib/membership'
 import type { Membership } from '@/lib/membership'
 import { useLobbySocket } from '@/lib/use-lobby-socket'
+import type { PlayerOut } from '@/types/api'
 import { Button, Modal, PaperCard, useToast } from '@/components/ui'
 
 const MAX_SEATS = 5
@@ -45,7 +46,23 @@ export function WaitingRoom({ code }: { code: string }) {
   const [kicked, setKicked] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
+  // The current name shown as a grey placeholder (for guests, to type over).
+  const [renamePlaceholder, setRenamePlaceholder] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+
+  // When the rename dialog opens, focus the field and select any prefilled text so
+  // the user starts typing a fresh name from the start (the first keystroke replaces
+  // it). The timeout lets the Modal's own focus-in run first. An empty (guest) field
+  // just lands the cursor at the start.
+  useEffect(() => {
+    if (!renaming) return
+    const id = window.setTimeout(() => {
+      renameInputRef.current?.focus()
+      renameInputRef.current?.select()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [renaming])
 
   useEffect(() => {
     setMembershipState(getMembership(code))
@@ -145,9 +162,13 @@ export function WaitingRoom({ code }: { code: string }) {
     router.push('/')
   }
 
-  // Open the rename modal seeded with the player's current name.
-  function openRename(currentName: string) {
-    setRenameValue(currentName)
+  // Open the rename modal. A guest (no linked account) gets their current name as a
+  // grey placeholder with an empty field, so they just type over "Guest…" without
+  // clearing it first. A registered player is prefilled with their registered name.
+  function openRename(p: PlayerOut) {
+    const isGuest = p.user_id == null
+    setRenameValue(isGuest ? '' : p.display_name)
+    setRenamePlaceholder(p.display_name)
     setRenaming(true)
   }
 
@@ -238,7 +259,7 @@ export function WaitingRoom({ code }: { code: string }) {
                     variant="ghost"
                     size="sm"
                     className="ml-auto"
-                    onClick={() => openRename(p.display_name)}
+                    onClick={() => openRename(p)}
                   >
                     {t('rename')}
                   </Button>
@@ -321,15 +342,15 @@ export function WaitingRoom({ code }: { code: string }) {
         }
       >
         <input
+          ref={renameInputRef}
           type="text"
           maxLength={32}
           value={renameValue}
           onChange={(e) => setRenameValue(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submitRename()}
-          placeholder={t('renamePlaceholder')}
+          placeholder={renamePlaceholder || t('renamePlaceholder')}
           aria-label={t('renamePlaceholder')}
-          autoFocus
-          className="w-full rounded-DEFAULT border-2 border-secondary-fixed-dim bg-surface-container-low px-3 py-2.5 font-body shadow-felt focus:border-secondary focus:outline-none"
+          className="w-full rounded-DEFAULT border-2 border-secondary-fixed-dim bg-surface-container-low px-3 py-2.5 font-body shadow-felt placeholder:text-on-surface-variant/50 focus:border-secondary focus:outline-none"
         />
       </Modal>
     </>
