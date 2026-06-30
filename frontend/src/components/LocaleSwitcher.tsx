@@ -32,6 +32,8 @@ export function LocaleSwitcher() {
             key={loc}
             type="button"
             aria-pressed={selected}
+            aria-label={t(loc)}
+            title={t(loc)}
             disabled={pending || selected}
             onClick={() =>
               startTransition(() => {
@@ -45,7 +47,7 @@ export function LocaleSwitcher() {
                 : 'text-on-surface-variant hover:bg-surface-container-high',
             )}
           >
-            {t(loc)}
+            {t(`${loc}Short`)}
           </button>
         )
       })}

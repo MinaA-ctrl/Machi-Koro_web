@@ -22,7 +22,9 @@
   "locale": {
     "switch": "Язык",
     "en": "English",
-    "ru": "Русский"
+    "ru": "Русский",
+    "enShort": "EN",
+    "ruShort": "RU"
   },
   "home": {
     "establishTable": "Создать новый стол",

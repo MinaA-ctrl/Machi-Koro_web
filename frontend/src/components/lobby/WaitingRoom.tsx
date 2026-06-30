@@ -245,9 +245,9 @@ export function WaitingRoom({ code }: { code: string }) {
                 >
                   {p ? '🧑' : '➕'}
                 </span>
-                <span className="font-label text-on-surface">
-                  {p ? p.display_name : t('seatOpen')}
-                  {isMe && <span className="ml-1 text-on-surface-variant">({t('ready')})</span>}
+                <span className="flex min-w-0 flex-1 items-center gap-1 font-label text-on-surface">
+                  <span className="truncate">{p ? p.display_name : t('seatOpen')}</span>
+                  {isMe && <span className="shrink-0 text-on-surface-variant">({t('ready')})</span>}
                 </span>
                 {p?.is_host && (
                   <span className="rounded-full bg-primary-container px-2 py-0.5 font-label text-xs text-on-primary-container">
@@ -344,7 +344,7 @@ export function WaitingRoom({ code }: { code: string }) {
         <input
           ref={renameInputRef}
           type="text"
-          maxLength={32}
+          maxLength={20}
           value={renameValue}
           onChange={(e) => setRenameValue(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submitRename()}

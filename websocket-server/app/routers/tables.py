@@ -50,7 +50,7 @@ async def create_table(
         password_hash=password_hash, max_players=MAX_PLAYERS,
     )
     display = await repo.unique_display_name(
-        session, table.id, clean_name(req.guest_name, 32, default="Guest")
+        session, table.id, clean_name(req.guest_name, 20, default="Guest")
     )
     await repo.add_player(
         session, table.id, seat=0, display_name=display, identity=identity,
@@ -82,7 +82,7 @@ async def join_table(
 
     seat = await repo.next_seat(session, table.id)
     display = await repo.unique_display_name(
-        session, table.id, clean_name(req.guest_name, 32, default="Guest")
+        session, table.id, clean_name(req.guest_name, 20, default="Guest")
     )
     await repo.add_player(
         session, table.id, seat=seat, display_name=display, identity=identity,
@@ -200,7 +200,7 @@ async def rename_player(
     if not (is_host or is_self):
         raise HTTPException(403, "Only the host or the seat owner can rename")
 
-    new_name = clean_name(req.name, 32)  # required
+    new_name = clean_name(req.name, 20)  # required
     unique = await repo.unique_display_name(
         session, table.id, new_name, exclude_player_id=player.id
     )

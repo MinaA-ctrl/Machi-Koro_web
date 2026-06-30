@@ -180,7 +180,7 @@ export function AuthModal({
           <input
             type="text"
             value={name}
-            maxLength={32}
+            maxLength={20}
             onChange={(e) => setName(e.target.value)}
             placeholder={t('namePlaceholder')}
             aria-label={t('displayName')}

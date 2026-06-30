@@ -47,7 +47,7 @@ async def register(req: RegisterReq, session: AsyncSession = Depends(get_session
     # was auto-derived from their email and happens to clash, silently disambiguate so
     # registration still succeeds.
     provided = bool((req.display_name or "").strip())
-    display = clean_name(req.display_name, 64, default=req.email.split("@")[0])
+    display = clean_name(req.display_name, 20, default=req.email.split("@")[0])
     if await repo.registered_display_name_taken(session, display):
         if provided:
             raise HTTPException(409, "name_taken")
