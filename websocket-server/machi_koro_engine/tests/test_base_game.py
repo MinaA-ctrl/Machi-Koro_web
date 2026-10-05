@@ -157,3 +157,14 @@ class TestConfigForVersion:
         harbour = create_initial_state(info, config=HARBOUR_GAME)
         assert fell_back["version"] == harbour["version"] == "Harbour"
         assert set(fell_back["supply"]) == set(harbour["supply"])
+
+
+# ── Malformed client input is rejected, never raised (Stage 5 Phase 0) ─────────
+
+def test_build_with_non_string_id_is_rejected_not_raised():
+    from machi_koro_engine import create_initial_state, handle_action
+    s = create_initial_state([{"seat": 0, "display_name": "A"}, {"seat": 1, "display_name": "B"}])
+    s["phase"] = "build"
+    for bad in ({}, [], 5, None):
+        for kind in ("card", "landmark"):
+            assert handle_action(s, 0, {"event": "build", "type": kind, "id": bad}) == {}

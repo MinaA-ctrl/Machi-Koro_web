@@ -8,4 +8,5 @@ echo "[backend] applying Alembic migrations…"
 ( cd /app/persistence && alembic upgrade head )
 
 echo "[backend] starting uvicorn app.main:app…"
-exec uvicorn app.main:app --host 0.0.0.0 --port 8001
+# --ws-max-size: client frames are tiny; refuse anything over 64 KiB at the socket.
+exec uvicorn app.main:app --host 0.0.0.0 --port 8001 --ws-max-size 65536

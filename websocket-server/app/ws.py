@@ -16,13 +16,14 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from machi_koro_engine import (
     PROMPT_TIMEOUT_SECONDS, build_prompt_payload, calculate_scores, config_for,
     config_for_version, create_initial_state, default_response, handle_action,
+    public_state,
 )
 from machi_koro_engine import events as mk_events
 from machi_koro_engine.game_engine import emit
 from persistence import repository as repo
 from persistence.database import async_session
 
-from app.auth import verify_ws_token
+from app.auth import ws_token_identity
 
 router = APIRouter()
 
@@ -181,7 +182,7 @@ async def _dispatch(code: str, seat: int, msg: dict) -> None:
         if state.get("phase") == "finished":
             await _persist_scores(code)
         await _persist_state(code)
-        await broadcast(game_rooms, code, {"event": "state_update", "state": state})
+        await broadcast(game_rooms, code, {"event": "state_update", "state": public_state(state)})
 
         # Granular animation stream: only the events THIS action appended, in order.
         # Filter by seq (not list index) so the engine's rolling-buffer trim can't
@@ -276,22 +277,87 @@ async def _prompt_timeout(code: str, token: int, delay: float) -> None:
         await _dispatch(code, state["active_seat"], msg)
 
 
-# ── Lobby WebSocket (no token gate, as today) ─────────────────────────────────
+# ── Socket auth + client-message parsing ──────────────────────────────────────
+
+MAX_CLIENT_MESSAGE_BYTES = 4096  # every legitimate client frame is tiny
+# The quick-reaction palette (frontend FeltTable REACTIONS); anything else is dropped.
+REACTION_EMOJIS = {"👍", "😂", "😮", "🎉", "😢", "🔥"}
+
+
+def _parse_client_msg(raw: str) -> dict | None:
+    """Decode one client frame. None (ignore it) if oversized, not JSON, or not an
+    object — a bad frame must never crash the socket loop."""
+    if len(raw) > MAX_CLIENT_MESSAGE_BYTES:
+        return None
+    try:
+        msg = json.loads(raw)
+    except ValueError:
+        return None
+    return msg if isinstance(msg, dict) else None
+
+
+async def _authorize_seat(websocket: WebSocket, code: str, seat: int) -> bool:
+    """Gate a socket on its per-seat token AND on the token's identity still owning
+    that seat in the DB — so a kicked player's leftover token can't speak for (or
+    disconnect) whoever holds the seat now."""
+    identity = ws_token_identity(websocket.query_params.get("token", ""), code, seat)
+    if identity is None:
+        return False
+    try:
+        async with async_session() as session:
+            table = await repo.get_table(session, code)
+            if not table:
+                return False
+            player = await repo.get_player_by_seat(session, table.id, seat)
+            return player is not None and player.identity == identity
+    except Exception as e:
+        print(f"[ws] seat ownership check failed for {code}/{seat}: {e}")
+        return False
+
+
+# ── Lobby WebSocket ───────────────────────────────────────────────────────────
+# Clients may only send these hints; the server stamps the sender's seat, so nobody
+# can speak for another seat. Kick and start are host-only (seat 0).
+LOBBY_CLIENT_EVENTS = {"player_kicked", "game_started", "player_renamed"}
+LOBBY_HOST_ONLY_EVENTS = {"player_kicked", "game_started"}
+
 
 @router.websocket("/ws/{code}/lobby/{seat}")
-async def lobby_ws(websocket: WebSocket, code: str, seat: str):
+async def lobby_ws(websocket: WebSocket, code: str, seat: int):
     await websocket.accept()
-    lobby_rooms.setdefault(code, {})[seat] = websocket
-    await broadcast(lobby_rooms, code, {"event": "player_joined", "seat": seat})
+    if not await _authorize_seat(websocket, code, seat):
+        await websocket.close(code=4401)
+        return
+
+    seat_key = str(seat)
+    lobby_rooms.setdefault(code, {})[seat_key] = websocket
+    await broadcast(lobby_rooms, code, {"event": "player_joined", "seat": seat_key})
 
     try:
         while True:
-            msg = json.loads(await websocket.receive_text())
-            if "seat" not in msg:  # don't clobber a carried seat (e.g. player_kicked)
-                msg["seat"] = seat
-            await broadcast(lobby_rooms, code, msg)
+            msg = _parse_client_msg(await websocket.receive_text())
+            if msg is None:
+                continue
+            event = msg.get("event")
+            if event not in LOBBY_CLIENT_EVENTS:
+                continue
+            if event in LOBBY_HOST_ONLY_EVENTS and seat != 0:
+                continue
+            out = {"event": event, "seat": seat_key}
+            if event == "player_kicked":
+                # The host names the kicked seat; the kick itself already happened
+                # over REST — this only tells the kicked client to leave.
+                target = msg.get("seat")
+                if not isinstance(target, int) or isinstance(target, bool) or target <= 0:
+                    continue
+                out["seat"] = str(target)
+            await broadcast(lobby_rooms, code, out)
     except WebSocketDisconnect:
-        lobby_rooms.get(code, {}).pop(seat, None)
+        # A socket already replaced by a newer one for this seat (reload, second
+        # tab) must not evict the live socket or close/leave the table.
+        if lobby_rooms.get(code, {}).get(seat_key) is not websocket:
+            return
+        lobby_rooms.get(code, {}).pop(seat_key, None)
         # Once the game has started, leaving the lobby is the normal hand-off to the
         # game channel — NOT abandonment. Don't close the table (the old code fired
         # `table_closed` at everyone the moment the host moved to the game) or drop
@@ -299,13 +365,13 @@ async def lobby_ws(websocket: WebSocket, code: str, seat: str):
         if await _table_has_started(code):
             if not lobby_rooms.get(code):
                 lobby_rooms.pop(code, None)
-        elif seat == "0":  # host occupies seat 0 — host leaving a waiting table closes it
+        elif seat == 0:  # host occupies seat 0 — host leaving a waiting table closes it
             await broadcast(lobby_rooms, code, {"event": "table_closed"})
             lobby_rooms.pop(code, None)
             await _delete_waiting_table(code)
         else:
-            await broadcast(lobby_rooms, code, {"event": "player_left", "seat": seat})
-            await _remove_waiting_player(code, int(seat))
+            await broadcast(lobby_rooms, code, {"event": "player_left", "seat": seat_key})
+            await _remove_waiting_player(code, seat)
             if not lobby_rooms.get(code):
                 lobby_rooms.pop(code, None)
                 await _delete_waiting_table(code)
@@ -365,8 +431,9 @@ async def _delayed_finish_table(code: str, delay: int = 15) -> None:
 async def game_ws(websocket: WebSocket, code: str, seat: int):
     await websocket.accept()
 
-    # Authenticate before touching game state — token binds (code, seat, identity).
-    if not verify_ws_token(websocket.query_params.get("token", ""), code, seat):
+    # Authenticate before touching game state — token binds (code, seat, identity),
+    # and that identity must still own the seat.
+    if not await _authorize_seat(websocket, code, seat):
         await websocket.close(code=4401)
         return
 
@@ -414,7 +481,7 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
     if code in game_states:
         await websocket.send_text(json.dumps({
             "event": "state_update",
-            "state": game_states[code],
+            "state": public_state(game_states[code]),
             "connected_count": len(game_rooms.get(code, {})),
         }))
         # Reconnection (S3.4): if this player is the active player and a prompt is
@@ -432,15 +499,16 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
 
     try:
         while True:
-            msg = json.loads(await websocket.receive_text())
-            if code not in game_states:
+            msg = _parse_client_msg(await websocket.receive_text())
+            if msg is None or code not in game_states:
                 continue
 
             # Reaction touches no state — handle outside the lock.
             if msg.get("event") == "reaction":
-                await broadcast(game_rooms, code, {
-                    "event": "reaction", "seat": seat, "emoji": msg.get("emoji", ""),
-                })
+                if msg.get("emoji") in REACTION_EMOJIS:
+                    await broadcast(game_rooms, code, {
+                        "event": "reaction", "seat": seat, "emoji": msg["emoji"],
+                    })
                 continue
 
             # Serialize state read/mutate/persist per code: the lock is taken AFTER
@@ -469,12 +537,15 @@ async def game_ws(websocket: WebSocket, code: str, seat: int):
                         game_states[code] = new_state
                         _cancel_prompt_timer(code)   # fresh game → drop any stale timer
                         await _persist_state(code)
-                        await broadcast(game_rooms, code, {"event": "state_update", "state": new_state})
+                        await broadcast(game_rooms, code, {"event": "state_update", "state": public_state(new_state)})
                     continue
 
                 # One serialized action → all resulting messages (state_update,
                 # game_events, toasts, coin_event, prompt, game_prompt) + timeout arming.
-                await _dispatch(code, seat, msg)
+                try:
+                    await _dispatch(code, seat, msg)
+                except Exception as e:  # a malformed action must not kill the socket
+                    print(f"[game] action error for {code} seat={seat}: {e}")
 
     except WebSocketDisconnect:
         # Only act if THIS socket is still the registered one for the seat. A socket
@@ -534,5 +605,5 @@ async def _delayed_auto_win(code: str, seat: int, delay: int = 15) -> None:
                 _cancel_prompt_timer(code)
                 await _persist_scores(code)
                 await _persist_state(code)
-                await broadcast(game_rooms, code, {"event": "state_update", "state": state})
+                await broadcast(game_rooms, code, {"event": "state_update", "state": public_state(state)})
                 await broadcast(game_rooms, code, {"event": "game_events", "events": [e]})

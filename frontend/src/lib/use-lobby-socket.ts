@@ -16,17 +16,20 @@ interface LobbyCallbacks {
 }
 
 /**
- * Lobby presence socket (`/ws/{code}/lobby/{seat}`). The server relays
- * join/left/kicked/closed; we treat REST as the source of truth for the roster and
- * use these events purely as triggers (refetch) and for the two terminal overlays.
+ * Lobby presence socket (`/ws/{code}/lobby/{seat}?token=…`), authenticated with the
+ * same per-seat token as the game channel. The server relays join/left/kicked/
+ * closed; we treat REST as the source of truth for the roster and use these events
+ * purely as triggers (refetch) and for the two terminal overlays.
  *
  * Returns a `send` ref so the host can broadcast `player_kicked` after the REST
- * kick call, which is how the kicked client learns it was removed (the lobby loop
- * preserves a carried `seat`, per app/ws.py).
+ * kick call, which is how the kicked client learns it was removed. The server only
+ * relays `player_kicked`/`game_started` from the host and `player_renamed` from
+ * anyone, always stamping the sender's seat (per app/ws.py).
  */
 export function useLobbySocket(
   code: string | null,
   seat: number | null,
+  token: string | null,
   cb: LobbyCallbacks,
 ): { send: (data: unknown) => void } {
   const socketRef = useRef<Socket | null>(null)
@@ -35,10 +38,10 @@ export function useLobbySocket(
   cbRef.current = cb
 
   useEffect(() => {
-    if (!code || seat == null) return
+    if (!code || seat == null || !token) return
 
     const socket = connectSocket<LobbyWsEvent>({
-      path: `/ws/${code}/lobby/${seat}`,
+      path: `/ws/${code}/lobby/${seat}?token=${encodeURIComponent(token)}`,
       onEvent: (event) => {
         switch (event.event) {
           case 'player_joined':
@@ -62,7 +65,7 @@ export function useLobbySocket(
       socket.close()
       socketRef.current = null
     }
-  }, [code, seat])
+  }, [code, seat, token])
 
   return {
     send: (data: unknown) => socketRef.current?.send(data),

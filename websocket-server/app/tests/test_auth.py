@@ -75,7 +75,8 @@ def test_per_seat_ws_auth_on_jwt_identity(client):
 
     # The JWT-derived per-seat token authorizes the game socket for its seat…
     with client.websocket_connect(f"/ws/{code}/game/0?token={start_tok}") as ws:
-        assert ws.receive_json()["event"] == "state_update"
+        events = [ws.receive_json()["event"] for _ in range(2)]
+        assert "state_update" in events  # after the player_joined_game announce
 
     # …but is not replayable on another seat (impersonation → 4401).
     with client.websocket_connect(f"/ws/{code}/game/1?token={start_tok}") as ws:

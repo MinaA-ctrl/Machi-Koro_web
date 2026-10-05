@@ -94,8 +94,9 @@ export interface GameState {
   /** Bounded keyed-event buffer (last ~60) — the translatable log/animation source. */
   events?: KeyedEvent[]
   event_seq?: number
-  /** Variable Supply only: the face-down draw pile. Presence signals VS is active. */
-  deck?: string[]
+  /** Variable Supply only: cards left in the face-down pile (its order is hidden
+   *  information and never sent). Presence signals VS is active. */
+  deck_count?: number
   scores?: Record<string, number> | unknown
 }
 

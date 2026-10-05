@@ -38,7 +38,7 @@
 
 | Channel | Endpoint | Auth |
 |---|---|---|
-| Lobby | `WS /ws/{code}/lobby/{seat}` | none (as today) |
+| Lobby | `WS /ws/{code}/lobby/{seat}?token=` | per-seat token, identity must own the seat (4401 otherwise). Client may send only `player_kicked`/`game_started` (host) and `player_renamed`; server stamps the sender seat (Stage 5 Phase 0) |
 | Game  | `WS /ws/{code}/game/{seat}?token=…` | per-seat WS token; bad/missing/wrong-seat → close **4401** |
 
 The game socket sends a full `state_update` snapshot immediately on (re)connect.

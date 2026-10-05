@@ -35,6 +35,7 @@ from .game_engine import (
     seed,
     build_prompt_payload,
     default_response,
+    public_state,
     PROMPT_TIMEOUT_SECONDS,
 )
 
@@ -49,6 +50,7 @@ __all__ = [
     "calculate_scores",
     "advance_turn",
     "seed",
+    "public_state",
     # interactive prompts (S3.4)
     "build_prompt_payload",
     "default_response",

@@ -240,3 +240,21 @@ class TestDefaultOff:
             "game_seq", "log", "events", "event_seq",
         }
         assert set(s) == expected_keys         # no 'deck', nothing extra
+
+
+# ── Hidden information: the deck order never reaches clients (Stage 5 Phase 0) ──
+
+def test_public_state_hides_deck_order_but_keeps_count():
+    from machi_koro_engine import public_state
+    s = make_vs()
+    view = public_state(s)
+    assert "deck" not in view
+    assert view["deck_count"] == len(s["deck"]) > 0
+    assert s["deck"]  # the authoritative state keeps its deck
+    assert view["supply"] == s["supply"]
+
+
+def test_public_state_is_identity_for_classic_supply():
+    from machi_koro_engine import public_state
+    s = create_initial_state(info(2), config=HARBOUR_GAME)
+    assert public_state(s) is s

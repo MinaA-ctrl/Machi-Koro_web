@@ -92,7 +92,7 @@ export const BOARD_FIXTURE: GameState = {
  */
 export const BOARD_FIXTURE_VS: GameState = {
   ...BOARD_FIXTURE,
-  deck: ['mine', 'mine', 'forest', 'forest', 'cafe'],
+  deck_count: 5,
   supply: {
     wheat_field: 6, ranch: 4, forest: 3, mine: 1, apple_orchard: 5,
     bakery: 6, convenience_store: 2, cheese_factory: 1, furniture_factory: 6,

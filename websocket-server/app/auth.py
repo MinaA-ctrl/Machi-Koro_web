@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import os
 import time
+from typing import Optional
 
 import jwt
 from fastapi import Depends, HTTPException
@@ -133,22 +134,28 @@ def mint_ws_token(code: str, seat: int, identity: str, ttl: int = WS_TOKEN_TTL) 
     return base64.urlsafe_b64encode(plain.encode()).decode().rstrip("=")
 
 
-def verify_ws_token(token: str, code: str, seat: int) -> bool:
-    """Verify a per-seat game token (inverse of mint_ws_token). Recomputes
-    HMAC-SHA256 over code|seat|identity|exp, where identity is the JWT subject the
-    minting REST call authenticated. `seat` is signed → not replayable across seats.
-    False on any malformed/expired/mismatched token, or if no secret is configured."""
+def ws_token_identity(token: str, code: str, seat: int) -> Optional[str]:
+    """Verify a per-seat WS token (inverse of mint_ws_token) and return the identity
+    it was minted for. Recomputes HMAC-SHA256 over code|seat|identity|exp, where
+    identity is the JWT subject the minting REST call authenticated. `seat` is
+    signed → not replayable across seats. None on any malformed/expired/mismatched
+    token, or if no secret is configured."""
     secret = _ws_secret()
     if not secret or not token:
-        return False
+        return None
     try:
         pad = "=" * (-len(token) % 4)
         identity, exp_str, sig = base64.urlsafe_b64decode(token + pad).decode().rsplit("|", 2)
         exp = int(exp_str)
     except Exception:
-        return False
+        return None
     if exp < time.time():
-        return False
+        return None
     msg = f"{code}|{seat}|{identity}|{exp}"
     expected = hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected, sig)
+    return identity if hmac.compare_digest(expected, sig) else None
+
+
+def verify_ws_token(token: str, code: str, seat: int) -> bool:
+    """True if `token` is a valid per-seat WS token for (code, seat)."""
+    return ws_token_identity(token, code, seat) is not None

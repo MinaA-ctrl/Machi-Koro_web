@@ -31,7 +31,7 @@ interface MarketProps {
  * remain (`state.supply`), and whether the local player can buy it right now
  * (their turn · build phase · can afford · in stock). Server re-validates every buy.
  *
- * 10-card Variable Supply: when `state.deck` is present a sold-out stack is replaced
+ * 10-card Variable Supply: when `state.deck_count` is present a sold-out stack is replaced
  * by a freshly-drawn type. We detect the swap by diffing the visible card ids across
  * snapshots and play the flip-reveal on the new slot(s) (reduced-motion → fade).
  */
@@ -40,7 +40,7 @@ export function Market({ state, me, isMyTurn, onBuy }: MarketProps) {
   const cardName = useCardName()
   const canBuyPhase = isMyTurn && state.phase === 'build'
   const lastRoll = state.last_roll
-  const isVariableSupply = Array.isArray(state.deck)
+  const isVariableSupply = state.deck_count != null
 
   // Buying asks for confirmation first ("Buy X for N coins?") rather than firing
   // the build the instant a card is clicked.

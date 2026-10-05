@@ -578,6 +578,17 @@ def calculate_scores(state):
     return rows
 
 
+def public_state(state):
+    """The state as players may see it. Variable Supply's face-down deck is hidden
+    information: clients get only how many cards remain (`deck_count`), never the
+    order. Shallow copy — the authoritative `state` is left untouched."""
+    if 'deck' not in state:
+        return state
+    view = {k: v for k, v in state.items() if k != 'deck'}
+    view['deck_count'] = len(state['deck'])
+    return view
+
+
 # ── Action handler (entry point called from main.py) ──────────────────────────
 
 def handle_action(state, seat, msg):
@@ -857,6 +868,8 @@ def handle_action(state, seat, msg):
     if event == 'build' and seat == active_seat and state['phase'] == 'build':
         build_type = msg.get('type')
         item_id    = msg.get('id')
+        if not isinstance(item_id, str):
+            return {}
 
         if build_type == 'card':
             card = CARD_DEFS.get(item_id)

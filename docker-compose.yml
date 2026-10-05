@@ -15,7 +15,8 @@ services:
       - machikoro_net
 
   # Postgres for the FastAPI backend's persistence layer (game data, accounts,
-  # entitlements). Host port 5433 to avoid clashing with a local Postgres.
+  # entitlements). Host port 5433 (avoids clashing with a local Postgres), bound to
+  # 127.0.0.1 so it's reachable from this machine only — never from the internet.
   postgres:
     image: postgres:16
     container_name: machikoro_postgres
@@ -23,11 +24,11 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-machikoro}
       POSTGRES_USER: ${POSTGRES_USER:-machikoro}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-machikoro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     networks:
       - machikoro_net
 
@@ -62,7 +63,7 @@ services:
       DB_PORT: "5432"
       DB_NAME: ${POSTGRES_DB:-machikoro}
       DB_USER: ${POSTGRES_USER:-machikoro}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-machikoro}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       MK_ENV: prod                       # enforces real secrets + rate limiting
       MK_JWT_SECRET: ${MK_JWT_SECRET}     # required (boot fails if unset/insecure)
       MK_WS_SECRET: ${MK_WS_SECRET}       # required; same value the WS token uses

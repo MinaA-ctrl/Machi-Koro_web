@@ -204,7 +204,7 @@ def test_sharp_vs_game_with_cleaning_company_pick(client, monkeypatch):
     with connect(client, code, 0, identity="user:10") as ws0:
         initial = recv_event(ws0, "state_update")["state"]
         assert initial["version"] == "Harbour + Sharp"
-        assert "deck" in initial and len(initial["supply"]) == 10   # Variable Supply active
+        assert "deck_count" in initial and len(initial["supply"]) == 10   # Variable Supply active
 
         st = ws_mod.game_states[code]
         active = next(p for p in st["players"] if p["seat"] == 0)
@@ -322,3 +322,38 @@ def test_prompt_timeout_auto_resolves_with_default(client, monkeypatch):
         resolved = recv_event(ws0, "state_update", max_msgs=20)["state"]
         assert resolved["phase"] == "build"
         assert resolved["pending_prompt"] is None
+
+
+def test_variable_supply_deck_order_never_sent_to_clients(client, monkeypatch):
+    """Phase 0: the face-down deck is hidden information — snapshots carry only
+    `deck_count`, on connect and after every action."""
+    code = _code()
+    seed_started(code, sharp=True, variable_supply=True, players=[(0, "A", 10), (1, "B", 20)])
+    monkeypatch.setattr("machi_koro_engine.game_engine.roll_die", lambda: 2)
+
+    with connect(client, code, 0, identity="user:10") as ws0:
+        snap = recv_event(ws0, "state_update")["state"]
+        assert "deck" not in snap
+        assert snap["deck_count"] == len(ws_mod.game_states[code]["deck"]) > 0
+
+        ws0.send_json({"event": "roll", "dice_count": 1})
+        after = recv_event(ws0, "state_update")["state"]
+        assert "deck" not in after and "deck_count" in after
+        assert "deck" in ws_mod.game_states[code]  # the server keeps the real deck
+
+
+def test_malformed_frames_and_unknown_emoji_do_not_break_the_game_socket(client):
+    """Phase 0: bad JSON, non-object frames, oversized frames, junk actions and
+    off-palette reactions are ignored; the socket keeps working."""
+    code = _code()
+    seed_started(code, players=[(0, "A", 10), (1, "B", 20)])
+    with connect(client, code, 0, identity="user:10") as ws0:
+        recv_event(ws0, "state_update")
+        ws0.send_text("{not json")
+        ws0.send_text("[1, 2]")
+        ws0.send_text('{"event": "roll", "pad": "' + "x" * ws_mod.MAX_CLIENT_MESSAGE_BYTES + '"}')
+        ws0.send_json({"event": "build", "type": "card", "id": {"x": 1}})
+        ws0.send_json({"event": "reaction", "emoji": "<img src=x onerror=alert(1)>"})
+        ws0.send_json({"event": "reaction", "emoji": "🎉"})
+        # The first thing to arrive is the valid reaction — everything above was dropped.
+        assert ws0.receive_json() == {"event": "reaction", "seat": 0, "emoji": "🎉"}

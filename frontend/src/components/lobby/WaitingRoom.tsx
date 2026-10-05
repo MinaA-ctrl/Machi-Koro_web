@@ -77,18 +77,23 @@ export function WaitingRoom({ code }: { code: string }) {
   })
 
   // Live presence + terminal events over the lobby WebSocket.
-  const lobby = useLobbySocket(membership ? code : null, membership?.seat ?? null, {
-    onPresenceChange: () => queryClient.invalidateQueries({ queryKey: ['table', code] }),
-    onTableClosed: () => setClosed(true),
-    onKicked: (seat) => {
-      if (membership?.seat === seat) {
-        clearMembership(code)
-        setKicked(true)
-      } else {
-        queryClient.invalidateQueries({ queryKey: ['table', code] })
-      }
+  const lobby = useLobbySocket(
+    membership ? code : null,
+    membership?.seat ?? null,
+    membership?.wsToken ?? null,
+    {
+      onPresenceChange: () => queryClient.invalidateQueries({ queryKey: ['table', code] }),
+      onTableClosed: () => setClosed(true),
+      onKicked: (seat) => {
+        if (membership?.seat === seat) {
+          clearMembership(code)
+          setKicked(true)
+        } else {
+          queryClient.invalidateQueries({ queryKey: ['table', code] })
+        }
+      },
     },
-  })
+  )
 
   // Protected table + not yet seated → prompt for the access key.
   useEffect(() => {
