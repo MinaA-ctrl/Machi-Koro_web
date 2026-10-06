@@ -318,3 +318,11 @@ Done in code (all tests pass: engine 203, app 51, persistence 8):
 Waiting on the user: **#3**, changing the MySQL passwords (they're leaked in a public repo) and the weak Postgres password on the server.
 
 Lesson: the order of WS broadcasts matters in tests, because a sender receives its own broadcast too.
+
+**Server check (2026-10-05):**
+- Production runs Caddy, frontend, backend and Postgres. There's no MySQL or WordPress.
+- Postgres is not published to the host (internal port only) and isn't using the default password.
+- So the leaked MySQL passwords and #4 don't affect production; they only affect the local legacy setup. The rotation script (`scripts/rotate-db-passwords.sh`) is kept for later use.
+- The server folder is not a git checkout, and its config files (`Caddyfile`, `docker-compose.override.yml`, `docker-compose.legacy.yml`, `site/`) aren't in the repo. Follow-ups:
+  - bring the server config into git
+  - deploy the Phase 0 code (backend and frontend together)

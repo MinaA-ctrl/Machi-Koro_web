@@ -6,3 +6,8 @@
 __pycache__/
 *.pyc
 .coverage
+
+# Server-only: per-host port overrides (see deploy-prod.md) and stray backups
+docker-compose.override.yml
+*.bak
+*.bak.*

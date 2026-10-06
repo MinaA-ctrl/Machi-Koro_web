@@ -1,0 +1,42 @@
+# Порт 443 хоста занят HAProxy (мультиплексор HTTPS + OpenVPN over TCP), который
+# проксирует HTTPS сюда на 127.0.0.1:8443 с PROXY protocol v2 — благодаря этому
+# Caddy и backend по-прежнему видят реальный IP клиента (важно для rate limiting).
+{
+	servers :443 {
+		listener_wrappers {
+			proxy_protocol {
+				allow 172.16.0.0/12 127.0.0.1/32
+				timeout 5s
+			}
+			tls
+		}
+	}
+}
+
+# Machi Koro — Stage 3 edge proxy (replaces nginx/nginx.conf).
+#
+# Caddy terminates TLS (automatic Let's Encrypt for SITE_DOMAIN) and routes:
+#   /api/*  → backend  (the /api prefix is stripped, so the FastAPI app sees
+#             /health, /auth/guest, /ws/<code>/... exactly as before)
+#   else    → frontend (Next.js)
+#
+# WebSocket upgrades under /api/ws/* are handled transparently — Caddy proxies
+# Upgrade/Connection automatically and streams long-lived connections by default,
+# so no per-route timeout tuning is needed (unlike the old nginx config).
+#
+# SITE_DOMAIN comes from the compose environment (.env). For a local HTTP smoke
+# without certificates, run Caddy with SITE_DOMAIN=":80".
+
+{$SITE_DOMAIN} {
+	encode gzip
+
+	# REST + WebSocket backend. handle_path strips the matched /api prefix.
+	handle_path /api/* {
+		reverse_proxy backend:8001
+	}
+
+	# Everything else → the Next.js frontend.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

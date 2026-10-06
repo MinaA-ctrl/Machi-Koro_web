@@ -1,22 +1,21 @@
+# Machi Koro — Stage 3 production stack.
+#
+#   Caddy (auto-HTTPS edge)  →  /         frontend  (Next.js standalone :3000)
+#                               /api/*    backend   (FastAPI REST :8001)
+#                               /api/ws/* backend   (FastAPI WebSocket :8001)
+#   Postgres  →  game state, accounts, entitlements, scores
+#
+# The old WordPress page-host + MySQL were retired (Stage 2 S2.7 / Stage 3); the
+# Next.js frontend is now the page-host. See docker-compose.legacy.yml for the
+# previous stack and Developer stages/stage-3-handoffs/deploy-prod.md to deploy.
+#
+# Reminder: backend AND frontend are BUILT images — `up` alone won't pick up code
+# changes. After editing websocket-server/ or frontend/, run:
+#   docker compose build backend frontend
+
 services:
 
-  db:
-    image: mysql:8.0
-    container_name: machikoro_db
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - db_data:/var/lib/mysql
-    networks:
-      - machikoro_net
-
-  # Postgres for the FastAPI backend's persistence layer (game data, accounts,
-  # entitlements). Host port 5433 (avoids clashing with a local Postgres), bound to
-  # 127.0.0.1 so it's reachable from this machine only — never from the internet.
+  # Game data, accounts, entitlements, scores. Backend runs Alembic on startup.
   postgres:
     image: postgres:16
     container_name: machikoro_postgres
@@ -27,31 +26,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pg_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5433:5432"
     networks:
       - machikoro_net
 
-  wordpress:
-    image: wordpress:latest
-    container_name: machikoro_wordpress
-    restart: always
-    depends_on:
-      - db
-    environment:
-      WORDPRESS_DB_HOST: db:3306
-      WORDPRESS_DB_NAME: ${MYSQL_DATABASE}
-      WORDPRESS_DB_USER: ${MYSQL_USER}
-      WORDPRESS_DB_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - wp_data:/var/www/html
-      - ./wp-plugin/machi-koro:/var/www/html/wp-content/plugins/machi-koro
-    networks:
-      - machikoro_net
-
-  # The Stage-2 FastAPI + Postgres backend (app.main) — the live game backend.
-  # Serves REST + WebSocket through nginx under /api/* and /api/ws/*. Applies
-  # Alembic migrations on startup; MK_ENV=prod enforces real secrets.
+  # FastAPI app.main — REST + WebSocket + auth + engine. MK_ENV=prod makes the
+  # backend refuse to boot on a missing/insecure secret.
   backend:
     build:
       context: ./websocket-server
@@ -72,24 +51,44 @@ services:
     networks:
       - machikoro_net
 
-  nginx:
-    image: nginx:alpine
-    container_name: machikoro_nginx
+  # Next.js 14 standalone server (Stage 3 frontend). Talks to the backend
+  # same-origin via Caddy (/api), so no public host port — only Caddy reaches it.
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: machikoro_frontend
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      - machikoro_net
+
+  # Edge reverse proxy with automatic Let's Encrypt TLS. SITE_DOMAIN must resolve
+  # to this host (A record, DNS-only) for the ACME challenge to succeed.
+  caddy:
+    image: caddy:2-alpine
+    container_name: machikoro_caddy
     restart: always
     ports:
-      - "8082:80"
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-machi-koro.pima.kz}
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
-      - wordpress
+      - frontend
       - backend
     networks:
       - machikoro_net
 
 volumes:
-  db_data:   # MySQL — WordPress core (pages/posts) only
-  wp_data:
-  pg_data:   # Postgres — the game backend's data
+  pg_data:        # Postgres — the game backend's data
+  caddy_data:     # Caddy — issued certificates + ACME account
+  caddy_config:
 
 networks:
   machikoro_net:
