@@ -1,0 +1,10 @@
+# Stage 5 AI tooling — local training/play-testing only, NEVER installed on the
+# game server (the server gets a small inference runtime in Phase F).
+# Install into its own virtual environment so deleting the folder removes it all:
+#   cd websocket-server
+#   python3 -m venv .venv-ai
+#   .venv-ai/bin/pip install -r requirements-ai.txt
+# Exact versions pinned (supply-chain safety, see stage-5-ai-plan.md S1).
+gymnasium==1.4.0
+numpy==2.5.3
+pytest==9.1.1

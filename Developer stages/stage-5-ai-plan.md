@@ -353,3 +353,42 @@ Lesson: the order of WS broadcasts matters in tests, because a sender receives i
 - Checking every move by copying the whole game is slow, so test with samples.
 
 **Play-test #1:** a loss to SimpleBot in 45 turns, very close: 3/4 landmarks built, only Radio Tower missing. The user's feedback: playable, though less comfortable than the website.
+
+### Phase B — the game as numbers (2026-10-08)
+**Built:**
+- `.venv-ai` (gitignored) with `requirements-ai.txt` pinned: gymnasium 1.4.0, numpy 2.5.3, pytest.
+- `machi_koro_ai/encoding.py`:
+  - observation from the deciding player's view (me first, then opponents in turn order)
+  - fixed action menu
+  - mask
+  - labels for people
+- `machi_koro_ai/env.py`: `MachiKoroEnv`, a Gymnasium env.
+  - Bots play the other seats inside `step()`.
+  - The agent's seat is random each game.
+  - Reward is ±1, with an optional landmark bonus.
+  - `action_masks()` is exposed for MaskablePPO.
+- `machi_koro_ai/eyes.py`: prints a position the way a person sees it and the way the AI sees it.
+- `tests/test_phase_b.py` (9 tests; skipped where gymnasium isn't installed).
+
+**Sizes:**
+
+| Mode | Observation numbers | Menu moves |
+|---|---|---|
+| Basic 2p | 76 | 171 |
+| Basic 4p | 116 | 461 |
+| Harbour 2p | 112 | 440 |
+| Harbour 4p | 178 | 1242 |
+
+Business Center trades take 144 of the 171 slots in Basic 2p. That's fine for now; bigger modes will need a two-step trade decision (Phase D).
+
+**Results:**
+- Round trip and mask verified over 1000 random games each.
+- `check_env` passes.
+- A random agent vs RandomBot wins 50.2%, so the wrapper is fair.
+- The env runs about 36k agent steps/sec.
+- Hidden deck order is not visible (S2 test).
+- 223 tests pass in `.venv-ai`.
+
+**Learned:**
+- Numbers are scaled (coins ÷ 20, copies ÷ 6) so they stay roughly 0–2. Neural nets learn badly from wildly different scales.
+- Everything is described from "my" point of view, so one brain can play any seat.
