@@ -392,3 +392,36 @@ Business Center trades take 144 of the 171 slots in Basic 2p. That's fine for no
 **Learned:**
 - Numbers are scaled (coins ÷ 20, copies ÷ 6) so they stay roughly 0–2. Neural nets learn badly from wildly different scales.
 - Everything is described from "my" point of view, so one brain can play any seat.
+
+### Phase C — first trained brain (2026-10-08)
+**Built:**
+- `train.py`:
+  - MaskablePPO, MLP 128×128, 8 games side by side, 2 torch threads
+  - saves a checkpoint every 50k steps and runs a SimpleBot exam
+  - TensorBoard charts
+  - `--resume` and `--init-from`
+- `trained_bot.py`: TrainedBot loads only `policy.pt` (weights_only) plus `brain.json`. `make_bot("trained:<run>")` works in `simulate.py` and `play.py`.
+- `tests/test_phase_c.py`: tiny training run, legal play, resume, no overwrite, and the S1 rule that a pickled object is refused.
+- Pinned: torch 2.14.1, stable-baselines3 2.9.0, sb3_contrib 2.9.0, tensorboard 2.21.0.
+
+**Runs (on the Mac):**
+
+| Run | Training | Time | CPU | Result |
+|---|---|---|---|---|
+| `c1-random` | 300k steps vs RandomBot | 28 s | about 1 core | Exam vs SimpleBot rose 79.5% → 94.5% |
+| `c2-simple` | 1M more steps vs SimpleBot | about 90 s | — | Plateaued around 95% |
+
+Speed was about 11.6k steps/sec.
+
+**Milestones (simulate.py, 2000 games, seed 7):** `trained:c2-simple` vs RandomBot 100.0%, vs SimpleBot 94.2%. No illegal moves. Resume continues from the saved step count.
+
+**What it learned by itself:**
+- The "cheap low numbers" engine: Wheat Field (about 5.7 per game) and Ranch (about 4.6), with Convenience Stores.
+- It rolls 1 die about 91% of the time, even with Train Station.
+- Typical opening is Ranch ×4–5.
+
+The blue 1–2 cards pay on the opponent's turn too. SimpleBot (Ranch cap 3, Wheat cap 2) can't match it.
+
+**Lesson:** a hand-written "sensible" bot can be far from optimal. 24k steps (2 minutes) was already enough to beat it.
+
+**Process slip:** while cleaning up after a scripted smoke test, the whole `human_games/` folder was deleted, including play-test #1. Its summary above is all that's left. From now on, delete only files the test itself created.

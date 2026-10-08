@@ -193,7 +193,7 @@ def replay(path, delay):
 
 def play(opponent, mode, human_first, delay, seed, name):
     bot = make_bot(opponent, seed=seed)
-    bot_name = f"{bot.name}Bot"
+    bot_name = bot.name if bot.name.startswith("AI") else f"{bot.name}Bot"
     names = [name, bot_name] if human_first else [bot_name, name]
     human_seat = 0 if human_first else 1
     game = Game(seed, names, config=make_config(mode))
