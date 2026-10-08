@@ -326,3 +326,12 @@ Lesson: the order of WS broadcasts matters in tests, because a sender receives i
 - The server folder is not a git checkout, and its config files (`Caddyfile`, `docker-compose.override.yml`, `docker-compose.legacy.yml`, `site/`) aren't in the repo. Follow-ups:
   - bring the server config into git
   - deploy the Phase 0 code (backend and frontend together)
+
+**Deployed (2026-10-06):**
+- The server folder is now a git checkout of `new-design-stage3`. Production config was committed in `973a562`; config backup is at `~/machikoro-config-backup-20261006.tgz`.
+- Phase 0 and the 20-char-name change went live via `git checkout -- . && docker compose build backend frontend && docker compose up -d`.
+- Verified:
+  - `/api/health` ok, backend booted cleanly
+  - the live lobby socket refuses missing and forged tokens (4401)
+  - the deployed frontend sends `?token=`
+- Lesson: check the shell prompt (Mac vs server) before running commands that change things.
