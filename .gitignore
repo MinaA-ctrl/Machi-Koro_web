@@ -11,3 +11,7 @@ __pycache__/
 docker-compose.override.yml
 *.bak
 *.bak.*
+
+# Stage 5 AI: local-only play-test games and training checkpoints (never pushed)
+websocket-server/machi_koro_ai/human_games/
+websocket-server/machi_koro_ai/checkpoints/

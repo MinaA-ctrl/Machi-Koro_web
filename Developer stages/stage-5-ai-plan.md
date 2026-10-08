@@ -335,3 +335,21 @@ Lesson: the order of WS broadcasts matters in tests, because a sender receives i
   - the live lobby socket refuses missing and forged tokens (4401)
   - the deployed frontend sends `?token=`
 - Lesson: check the shell prompt (Mac vs server) before running commands that change things.
+
+### Phase A — practice table, bots, text game (2026-10-08)
+**Built:**
+- `use_rng()` gives each game its own dice. It's a context manager rather than a field in the state, because the state must stay plain JSON.
+- `machi_koro_engine/legal.py` (`legal_actions`).
+- `machi_koro_ai/`: `game.py` (Game wrapper with move recording), `bots/` (RandomBot, SimpleBot), `simulate.py`, `play.py` (text game with save and replay), `tests/test_phase_a.py`.
+
+**Results:**
+- All 214 engine+AI tests pass in about 1.5 min.
+- SimpleBot beats RandomBot 98.1% (Basic, 1000 games). In Harbour it's 99.8%; in 4-player Basic against 3 Random bots it wins 84.6%.
+- Speed is about 900 games/sec (Basic, 2 players) on the Mac.
+
+**Learned:**
+- Business Center can offer 1,000+ trade options at once. This matters for the Phase B move menu.
+- The engine quietly turns "roll 2 dice" into 1 die without Train Station.
+- Checking every move by copying the whole game is slow, so test with samples.
+
+**Play-test #1:** a loss to SimpleBot in 45 turns, very close: 3/4 landmarks built, only Radio Tower missing. The user's feedback: playable, though less comfortable than the website.

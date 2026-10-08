@@ -1,4 +1,5 @@
 import random
+from contextlib import contextmanager
 from copy import deepcopy
 from . import events as ev
 from .card_defs import (
@@ -24,6 +25,23 @@ def seed(n):
 def roll_die():
     """Roll a single six-sided die through the seedable RNG."""
     return _rng.randint(1, 6)
+
+
+@contextmanager
+def use_rng(rng):
+    """Route every die roll and deck shuffle through `rng` while the block runs.
+
+    Lets a simulation keep many games side by side, each with its own seeded RNG,
+    so games are reproducible and can't disturb each other's dice. The game state
+    itself stays plain JSON (an RNG object can't be persisted). Outside the block
+    the module RNG is restored, so the live server is unaffected."""
+    global _rng
+    saved = _rng
+    _rng = rng
+    try:
+        yield rng
+    finally:
+        _rng = saved
 
 
 # ── State creation ─────────────────────────────────────────────────────────────

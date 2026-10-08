@@ -25,6 +25,8 @@ from .game_config import (
     CONFIGS,
 )
 
+from .legal import legal_actions
+
 from .game_engine import (
     create_initial_state,
     handle_action,
@@ -33,6 +35,7 @@ from .game_engine import (
     calculate_scores,
     advance_turn,
     seed,
+    use_rng,
     build_prompt_payload,
     default_response,
     public_state,
@@ -50,7 +53,10 @@ __all__ = [
     "calculate_scores",
     "advance_turn",
     "seed",
+    "use_rng",
     "public_state",
+    # legal-move generation (Stage 5)
+    "legal_actions",
     # interactive prompts (S3.4)
     "build_prompt_payload",
     "default_response",
